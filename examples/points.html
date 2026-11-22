@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: points / gl_PointCoord</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Points 与 gl_PointCoord</h1>
+      <p>
+        <code>primitive: 'points'</code> + 顶点着色器里的
+        <code>gl_PointSize</code>，在片元里用 <code>gl_PointCoord</code>
+        画圆形光点，并开启加法混合。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({ container: document.body })
+
+        const COUNT = 900
+        const positions = new Float32Array(COUNT * 2)
+        const sizes = new Float32Array(COUNT)
+        for (let i = 0; i < COUNT; ++i) {
+          positions[i * 2] = Math.random() * 2 - 1
+          positions[i * 2 + 1] = Math.random() * 2 - 1
+          sizes[i] = 2 + Math.random() * 9
+        }
+
+        const draw = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            attribute float size;
+            uniform float time;
+            varying vec3 vColor;
+            void main () {
+              vec2 p = position;
+              p.y += sin(time * 1.7 + position.x * 5.0) * 0.025;
+              gl_Position = vec4(p, 0, 1);
+              gl_PointSize = size * (1.0 + 0.25 * sin(time * 4.0 + position.x * 11.0));
+              vColor = vec3(
+                0.45 + 0.55 * (position.x * 0.5 + 0.5),
+                0.35 + 0.55 * (position.y * 0.5 + 0.5),
+                0.9
+              );
+            }
+          `,
+          frag: `
+            precision mediump float;
+            varying vec3 vColor;
+            void main () {
+              vec2 c = gl_PointCoord - 0.5;
+              float d = length(c);
+              if (d > 0.5) discard;
+              float a = smoothstep(0.5, 0.0, d);
+              gl_FragColor = vec4(vColor * a, a * 0.9);
+            }
+          `,
+          attributes: {
+            position: regl.buffer(positions),
+            size: regl.buffer(sizes)
+          },
+          uniforms: {
+            time: regl.context('time')
+          },
+          primitive: 'points',
+          count: COUNT,
+          depth: { enable: false },
+          blend: {
+            enable: true,
+            func: { src: 'src alpha', dst: 'one' }
+          }
+        })
+
+        regl.frame(() => {
+          regl.clear({ color: [0.02, 0.03, 0.05, 1] })
+          draw()
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

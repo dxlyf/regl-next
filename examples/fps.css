@@ -1,0 +1,190 @@
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #02040a;
+  color: #cde7ff;
+  font-family: "JetBrains Mono", "Consolas", monospace;
+}
+
+body.fps {
+  cursor: crosshair;
+}
+
+body.fps canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.fps-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.fps-top {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.fps-panel {
+  background: rgba(4, 10, 20, 0.74);
+  border: 1px solid rgba(90, 180, 255, 0.28);
+  box-shadow: 0 0 28px rgba(24, 110, 180, 0.16);
+  padding: 10px 13px;
+  border-radius: 4px;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #7fb7d8;
+}
+
+.fps-panel strong {
+  color: #e8f7ff;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.fps-health {
+  margin-top: 7px;
+  width: 180px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.fps-health i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #28e0a0, #78f0ff);
+  transition: width 0.15s linear;
+}
+
+.fps-right {
+  text-align: right;
+}
+
+.fps-enemies {
+  color: #ffb45e;
+}
+
+.fps-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  opacity: 0.85;
+}
+
+.fps-crosshair::before,
+.fps-crosshair::after {
+  content: "";
+  position: absolute;
+  background: #e9fbff;
+  box-shadow: 0 0 8px rgba(120, 230, 255, 0.8);
+}
+
+.fps-crosshair::before {
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.fps-crosshair::after {
+  top: 50%;
+  left: 0;
+  height: 1px;
+  width: 100%;
+  transform: translateY(-50%);
+}
+
+.fps-crosshair.hot::before,
+.fps-crosshair.hot::after {
+  background: #ff5b4a;
+}
+
+.fps-start {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, rgba(5, 18, 34, 0.45), rgba(0, 2, 8, 0.86));
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.fps-start.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fps-start-card {
+  width: min(560px, calc(100vw - 60px));
+  padding: 28px 32px;
+  border: 1px solid rgba(80, 190, 255, 0.34);
+  background: rgba(3, 10, 22, 0.86);
+  box-shadow: 0 0 60px rgba(20, 120, 200, 0.18);
+}
+
+.fps-start h1 {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 4vw, 36px);
+  letter-spacing: 0.16em;
+  font-weight: 600;
+  color: #e7f8ff;
+}
+
+.fps-start p {
+  margin: 6px 0;
+  color: #7fb7d8;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.fps-start .accent {
+  color: #57d7ff;
+}
+
+.fps-start .keys {
+  margin-top: 16px;
+  color: #c6e9ff;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.fps-damage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 160px 40px rgba(255, 30, 20, 0.75);
+  transition: opacity 0.08s linear;
+}
+
+.fps-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  color: #6ea9c8;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-align: center;
+}

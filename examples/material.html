@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: material / shared program</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>材质共享一个 Program</h1>
+      <p>
+        几何体只上传一次并装进 VAO；每帧只更新每对象的
+        <code>model</code> / <code>tint</code> uniform。不要用
+        <code>regl.prop('position')</code> 把顶点数组每帧重新上传。
+      </p>
+      <p id="stats"></p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script src="math.js"></script>
+    <script>
+      try {
+        const regl = createREGL({
+          container: document.body,
+          attributes: { antialias: true }
+        })
+
+        // -------------------------------------------------------------------
+        // 几何体：每个 mesh 只创建一次 buffer + VAO
+        // -------------------------------------------------------------------
+
+        function cubeGeometry () {
+          const faces = [
+            { n: [0, 0, 1], v: [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]] },
+            { n: [0, 0, -1], v: [[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]] },
+            { n: [1, 0, 0], v: [[1, -1, 1], [1, -1, -1], [1, 1, -1], [1, 1, 1]] },
+            { n: [-1, 0, 0], v: [[-1, -1, -1], [-1, -1, 1], [-1, 1, 1], [-1, 1, -1]] },
+            { n: [0, 1, 0], v: [[-1, 1, 1], [1, 1, 1], [1, 1, -1], [-1, 1, -1]] },
+            { n: [0, -1, 0], v: [[-1, -1, -1], [1, -1, -1], [1, -1, 1], [-1, -1, 1]] }
+          ]
+
+          const positions = []
+          const normals = []
+          const indices = []
+          for (const face of faces) {
+            const base = positions.length / 3
+            for (const p of face.v) {
+              positions.push(p[0], p[1], p[2])
+              normals.push(face.n[0], face.n[1], face.n[2])
+            }
+            indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
+          }
+
+          return {
+            positions: new Float32Array(positions),
+            normals: new Float32Array(normals),
+            indices: new Uint16Array(indices)
+          }
+        }
+
+        function makeVAO (geometry) {
+          return regl.vao({
+            attributes: [
+              { data: geometry.positions, size: 3 },
+              { data: geometry.normals, size: 3 }
+            ],
+            elements: regl.elements(geometry.indices)
+          })
+        }
+
+        const cubeVao = makeVAO(cubeGeometry())
+
+        const floorVao = makeVAO({
+          positions: new Float32Array([
+            -5, -1.2, -5,
+            5, -1.2, -5,
+            5, -1.2, 5,
+            -5, -1.2, 5
+          ]),
+          normals: new Float32Array([
+            0, 1, 0,
+            0, 1, 0,
+            0, 1, 0,
+            0, 1, 0
+          ]),
+          indices: new Uint16Array([0, 1, 2, 0, 2, 3])
+        })
+
+        // -------------------------------------------------------------------
+        // 一个材质 = 一个 command / 一个 shader program
+        // -------------------------------------------------------------------
+
+        const drawMaterial = regl({
+          vert: `
+            precision mediump float;
+            attribute vec3 position;
+            attribute vec3 normal;
+            uniform mat4 uModel;
+            uniform mat4 uView;
+            uniform mat4 uProjection;
+            varying vec3 vNormal;
+            void main () {
+              vec4 world = uModel * vec4(position, 1.0);
+              mat3 normalMatrix = mat3(
+                uModel[0].xyz,
+                uModel[1].xyz,
+                uModel[2].xyz
+              );
+              vNormal = normalMatrix * normal;
+              gl_Position = uProjection * uView * world;
+            }
+          `,
+          frag: `
+            precision mediump float;
+            uniform vec3 uLightDir;
+            uniform vec4 uTint;
+            varying vec3 vNormal;
+            void main () {
+              vec3 n = normalize(vNormal);
+              float diffuse = max(dot(n, normalize(uLightDir)), 0.0);
+              vec3 color = uTint.rgb * (0.22 + 0.78 * diffuse);
+              gl_FragColor = vec4(color, 1.0);
+            }
+          `,
+
+          // 材质固定参数：整个材质只设置一次
+          uniforms: {
+            uLightDir: [0.45, 0.85, 0.3],
+            uModel: regl.prop('model'),
+            uTint: regl.prop('tint')
+          },
+
+          // 每个对象切换 VAO；position/normal 数据不会重新上传
+          vao: regl.prop('vao'),
+          attributes: { position: 0, normal: 1 },
+
+          depth: { enable: true },
+          cull: { enable: false }
+        })
+
+        // 相机参数通过 scope 注入，只上传一次给这一批对象
+        const setupCamera = regl({
+          uniforms: {
+            uView: regl.prop('view'),
+            uProjection: regl.prop('projection')
+          }
+        })
+
+        // -------------------------------------------------------------------
+        // 对象：只有 model 矩阵和 tint 是每对象数据
+        // -------------------------------------------------------------------
+
+        const floorModel = new Float32Array(16)
+        M4.identity(floorModel)
+
+        const floorTint = new Float32Array([0.16, 0.18, 0.22, 1])
+        const objects = [{
+          vao: floorVao,
+          model: floorModel,
+          tint: floorTint
+        }]
+
+        const palette = [
+          [0.95, 0.35, 0.25],
+          [0.95, 0.72, 0.25],
+          [0.35, 0.8, 0.9],
+          [0.45, 0.55, 0.95],
+          [0.75, 0.4, 0.9],
+          [0.4, 0.85, 0.55]
+        ]
+
+        const cubes = []
+        for (let i = 0; i < 15; ++i) {
+          const x = (i % 5 - 2) * 1.6
+          const z = (Math.floor(i / 5) - 1) * 1.6
+          const color = palette[i % palette.length]
+          const object = {
+            vao: cubeVao,
+            model: new Float32Array(16),
+            tint: new Float32Array([color[0], color[1], color[2], 1]),
+            x,
+            z,
+            phase: i * 0.73
+          }
+          cubes.push(object)
+          objects.push(object)
+        }
+
+        const view = new Float32Array(16)
+        const projection = new Float32Array(16)
+        const rot = new Float32Array(16)
+        const scale = new Float32Array(16)
+        const trans = new Float32Array(16)
+        const tmp = new Float32Array(16)
+
+        let statsSet = false
+
+        regl.frame(({ viewportWidth, viewportHeight, time }) => {
+          regl.clear({ color: [0.02, 0.03, 0.05, 1], depth: 1 })
+
+          const aspect = viewportWidth / Math.max(1, viewportHeight)
+          M4.perspective(projection, Math.PI / 4, aspect, 0.1, 100)
+          M4.lookAt(
+            view,
+            [Math.cos(time * 0.18) * 8, 5.2, Math.sin(time * 0.18) * 8],
+            [0, 0, 0],
+            [0, 1, 0]
+          )
+
+          // 每帧只更新 model 矩阵，不碰 geometry buffer
+          for (const cube of cubes) {
+            M4.rotationY(rot, time * 0.6 + cube.phase)
+            M4.scaling(scale, 0.58, 0.58, 0.58)
+            M4.multiply(tmp, rot, scale)
+            M4.translation(
+              trans,
+              cube.x,
+              0.1 + Math.sin(time * 1.4 + cube.phase) * 0.18,
+              cube.z
+            )
+            M4.multiply(cube.model, trans, tmp)
+          }
+
+          setupCamera({ view, projection }, () => {
+            drawMaterial(objects)
+          })
+
+          if (!statsSet) {
+            statsSet = true
+            document.getElementById('stats').textContent =
+              `programs: ${regl.stats.shaderCount} · objects: ${objects.length} · VAOs: 2`
+          }
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

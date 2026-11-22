@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: cube map / 3D</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Cube Map 与 3D 深度</h1>
+      <p>
+        <code>regl.cube(...)</code> 创建立方体贴图，片元用
+        <code>textureCube</code> 按方向采样；矩阵分别作为
+        <code>projection / view / model</code> uniform 传入。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script src="math.js"></script>
+    <script>
+      try {
+        const regl = createREGL({
+          container: document.body,
+          attributes: { antialias: true }
+        })
+
+        function face (color) {
+          return { data: [[color]] }
+        }
+
+        const env = regl.cube({
+          faces: [
+            face([245, 80, 80, 255]),   // +X
+            face([80, 220, 220, 255]),  // -X
+            face([100, 230, 120, 255]), // +Y
+            face([230, 90, 220, 255]),  // -Y
+            face([90, 140, 255, 255]),  // +Z
+            face([235, 210, 80, 255])   // -Z
+          ]
+        })
+
+        const positions = [
+          [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+          [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]
+        ]
+        const indices = [
+          0, 1, 2, 0, 2, 3,
+          4, 6, 5, 4, 7, 6,
+          0, 3, 7, 0, 7, 4,
+          1, 5, 6, 1, 6, 2,
+          0, 4, 5, 0, 5, 1,
+          3, 2, 6, 3, 6, 7
+        ]
+
+        const drawCube = regl({
+          vert: `
+            precision mediump float;
+            attribute vec3 position;
+            uniform mat4 projection;
+            uniform mat4 view;
+            uniform mat4 model;
+            varying vec3 vDir;
+            void main () {
+              vec4 world = model * vec4(position, 1.0);
+              vDir = normalize(position);
+              gl_Position = projection * view * world;
+            }
+          `,
+          frag: `
+            precision mediump float;
+            uniform samplerCube env;
+            varying vec3 vDir;
+            void main () { gl_FragColor = textureCube(env, vDir); }
+          `,
+          attributes: {
+            position: positions
+          },
+          elements: regl.elements(indices),
+          uniforms: {
+            env: env,
+            projection: regl.prop('projection'),
+            view: regl.prop('view'),
+            model: regl.prop('model')
+          },
+          depth: { enable: true },
+          cull: { enable: false }
+        })
+
+        const projection = new Float32Array(16)
+        const view = new Float32Array(16)
+        const model = new Float32Array(16)
+        const rotX = new Float32Array(16)
+        const rotY = new Float32Array(16)
+        const tmp = new Float32Array(16)
+
+        regl.frame(({ viewportWidth, viewportHeight, time }) => {
+          regl.clear({ color: [0.02, 0.03, 0.05, 1], depth: 1 })
+          const aspect = viewportWidth / Math.max(1, viewportHeight)
+          M4.perspective(projection, Math.PI / 3, aspect, 0.1, 100)
+          M4.lookAt(view, [3.2, 2.2, 4.2], [0, 0, 0], [0, 1, 0])
+          M4.rotationY(rotY, time * 0.8)
+          M4.rotationX(rotX, time * 0.35)
+          M4.multiply(tmp, rotY, rotX)
+          M4.multiply(model, tmp, M4.scaling(new Float32Array(16), 1.15, 1.15, 1.15))
+          drawCube({ projection, view, model })
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

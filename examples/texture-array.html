@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: WebGL2 2D array texture</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>WebGL2 2D Array Texture</h1>
+      <p>
+        <code>regl.texture2DArray(...)</code> 创建 4 层纹理；
+        fragment shader 用 <code>sampler2DArray</code> 的 z 坐标选择层，
+        z 值随时间切换。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({
+          container: document.body,
+          version: 2
+        })
+
+        const COLORS = [
+          [255, 70, 60, 255],
+          [70, 220, 120, 255],
+          [70, 140, 255, 255],
+          [240, 200, 60, 255]
+        ]
+
+        const data = []
+        for (let layer = 0; layer < 4; ++layer) {
+          const rows = []
+          for (let y = 0; y < 4; ++y) {
+            const row = []
+            for (let x = 0; x < 4; ++x) {
+              const c = COLORS[layer]
+              const edge = x === 0 || y === 0 || x === 3 || y === 3
+              const scale = edge ? 1 : 0.55
+              row.push([
+                c[0] * scale,
+                c[1] * scale,
+                c[2] * scale,
+                255
+              ])
+            }
+            rows.push(row)
+          }
+          data.push(rows)
+        }
+
+        const texture = regl.texture2DArray({
+          width: 4,
+          height: 4,
+          layers: 4,
+          data: data,
+          min: 'nearest',
+          mag: 'nearest',
+          wrap: 'repeat'
+        })
+
+        const draw = regl({
+          vert: `#version 300 es
+            in vec2 position;
+            in vec2 uv;
+            out vec2 vUv;
+            void main () {
+              vUv = uv;
+              gl_Position = vec4(position, 0.0, 1.0);
+            }
+          `,
+          frag: `#version 300 es
+            precision highp float;
+            uniform highp sampler2DArray tex;
+            uniform float layer;
+            in vec2 vUv;
+            out vec4 fragColor;
+            void main () {
+              fragColor = texture(tex, vec3(vUv * 3.0, floor(layer)));
+            }
+          `,
+          attributes: {
+            position: [[-1, -1], [3, -1], [-1, 3]],
+            uv: [[0, 0], [2, 0], [0, 2]]
+          },
+          uniforms: {
+            tex: texture,
+            layer: (context) => (context.time * 1.2) % 4
+          },
+          count: 3,
+          depth: { enable: false }
+        })
+
+        regl.frame(() => {
+          regl.clear({ color: [0.02, 0.03, 0.05, 1] })
+          draw()
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

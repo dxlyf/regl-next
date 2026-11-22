@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: blend debug</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Blend 混合调试</h1>
+      <p>
+        右侧面板可以直接修改
+        <code>blend.func</code> / <code>blend.equation</code> /
+        <code>blend.color</code> / <code>colorMask</code>，
+        观察三个半透明三角形叠加结果。
+      </p>
+    </div>
+
+    <div class="debug-panel">
+      <h2>Blend 参数</h2>
+
+      <label class="row">
+        <span>srcRGB</span>
+        <select id="srcRGB"></select>
+      </label>
+      <label class="row">
+        <span>dstRGB</span>
+        <select id="dstRGB"></select>
+      </label>
+      <label class="row">
+        <span>srcAlpha</span>
+        <select id="srcAlpha"></select>
+      </label>
+      <label class="row">
+        <span>dstAlpha</span>
+        <select id="dstAlpha"></select>
+      </label>
+
+      <label class="row">
+        <span>RGB equation</span>
+        <select id="equationRGB"></select>
+      </label>
+      <label class="row">
+        <span>Alpha equation</span>
+        <select id="equationAlpha"></select>
+      </label>
+
+      <label class="row">
+        <span>blend.color</span>
+        <input id="blendColor" type="color" value="#ffffff" />
+      </label>
+
+      <label class="row">
+        <span>opacity</span>
+        <input id="opacity" type="range" min="0" max="1" step="0.01" value="0.62" />
+      </label>
+      <div class="check-row">
+        <label><input id="enabled" type="checkbox" checked /> enable</label>
+      </div>
+
+      <div class="check-row">
+        <span>colorMask</span>
+        <label><input id="maskR" type="checkbox" checked /> R</label>
+        <label><input id="maskG" type="checkbox" checked /> G</label>
+        <label><input id="maskB" type="checkbox" checked /> B</label>
+        <label><input id="maskA" type="checkbox" checked /> A</label>
+      </div>
+
+      <div class="presets">
+        <button data-preset="alpha">alpha</button>
+        <button data-preset="additive">additive</button>
+        <button data-preset="multiply">multiply</button>
+        <button data-preset="premultiplied">premultiplied</button>
+      </div>
+
+      <div id="status" class="status"></div>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({ container: document.body })
+
+        const FACTORS = [
+          'zero',
+          'one',
+          'src color',
+          'one minus src color',
+          'src alpha',
+          'one minus src alpha',
+          'dst color',
+          'one minus dst color',
+          'dst alpha',
+          'one minus dst alpha',
+          'constant color',
+          'one minus constant color',
+          'constant alpha',
+          'one minus constant alpha'
+        ]
+        const EQUATIONS = ['add', 'subtract', 'reverse subtract']
+        const INVALID_COMBINATIONS = [
+          'constant color, constant alpha',
+          'one minus constant color, constant alpha',
+          'constant color, one minus constant alpha',
+          'one minus constant color, one minus constant alpha',
+          'constant alpha, constant color',
+          'constant alpha, one minus constant color',
+          'one minus constant alpha, constant color',
+          'one minus constant alpha, one minus constant color'
+        ]
+
+        const ids = [
+          'srcRGB',
+          'dstRGB',
+          'srcAlpha',
+          'dstAlpha',
+          'equationRGB',
+          'equationAlpha',
+          'blendColor',
+          'opacity',
+          'enabled',
+          'maskR',
+          'maskG',
+          'maskB',
+          'maskA',
+          'status'
+        ]
+        const ui = {}
+        for (const id of ids) ui[id] = document.getElementById(id)
+
+        function fillSelect (select, values) {
+          for (const value of values) {
+            const option = document.createElement('option')
+            option.value = value
+            option.textContent = value
+            select.appendChild(option)
+          }
+        }
+
+        fillSelect(ui.srcRGB, FACTORS)
+        fillSelect(ui.dstRGB, FACTORS)
+        fillSelect(ui.srcAlpha, FACTORS)
+        fillSelect(ui.dstAlpha, FACTORS)
+        fillSelect(ui.equationRGB, EQUATIONS)
+        fillSelect(ui.equationAlpha, EQUATIONS)
+
+        const presetValues = {
+          alpha: {
+            srcRGB: 'src alpha',
+            dstRGB: 'one minus src alpha',
+            srcAlpha: 'src alpha',
+            dstAlpha: 'one minus src alpha',
+            equationRGB: 'add',
+            equationAlpha: 'add'
+          },
+          additive: {
+            srcRGB: 'src alpha',
+            dstRGB: 'one',
+            srcAlpha: 'src alpha',
+            dstAlpha: 'one',
+            equationRGB: 'add',
+            equationAlpha: 'add'
+          },
+          multiply: {
+            srcRGB: 'dst color',
+            dstRGB: 'zero',
+            srcAlpha: 'dst alpha',
+            dstAlpha: 'zero',
+            equationRGB: 'add',
+            equationAlpha: 'add'
+          },
+          premultiplied: {
+            srcRGB: 'one',
+            dstRGB: 'one minus src alpha',
+            srcAlpha: 'one',
+            dstAlpha: 'one minus src alpha',
+            equationRGB: 'add',
+            equationAlpha: 'add'
+          }
+        }
+
+        function applyPreset (name) {
+          const preset = presetValues[name]
+          if (!preset) return
+          for (const [id, value] of Object.entries(preset)) {
+            ui[id].value = value
+          }
+          ui.enabled.checked = true
+          refresh()
+        }
+
+        for (const button of document.querySelectorAll('[data-preset]')) {
+          button.addEventListener('click', () => {
+            applyPreset(button.dataset.preset)
+          })
+        }
+
+        function hexToRgba (hex) {
+          const n = parseInt(hex.slice(1), 16)
+          return [
+            ((n >> 16) & 0xff) / 255,
+            ((n >> 8) & 0xff) / 255,
+            (n & 0xff) / 255,
+            1
+          ]
+        }
+
+        let currentBlend = null
+        let currentColorMask = [true, true, true, true]
+
+        function refresh () {
+          const srcRGB = ui.srcRGB.value
+          const dstRGB = ui.dstRGB.value
+          const srcAlpha = ui.srcAlpha.value
+          const dstAlpha = ui.dstAlpha.value
+          const equationRGB = ui.equationRGB.value
+          const equationAlpha = ui.equationAlpha.value
+
+          const invalid = INVALID_COMBINATIONS.indexOf(srcRGB + ', ' + dstRGB) >= 0
+          const mask = [
+            ui.maskR.checked,
+            ui.maskG.checked,
+            ui.maskB.checked,
+            ui.maskA.checked
+          ]
+          const status = []
+          status.push('srcRGB: ' + srcRGB + '   dstRGB: ' + dstRGB)
+          status.push('srcAlpha: ' + srcAlpha + '   dstAlpha: ' + dstAlpha)
+          status.push('equation: ' + equationRGB + ' / ' + equationAlpha)
+          status.push('blend.color: ' + ui.blendColor.value)
+          status.push('opacity: ' + ui.opacity.value + '   enable: ' + ui.enabled.checked)
+          status.push('colorMask: ' + mask.map((v) => (v ? 1 : 0)).join(''))
+          if (invalid) {
+            status.push('')
+            status.push('WebGL 不允许 constant color / constant alpha 的这个组合')
+          }
+
+          ui.status.textContent = status.join('\n')
+          ui.status.classList.toggle('invalid', invalid)
+
+          currentColorMask = mask
+
+          if (invalid) return
+
+          currentBlend = {
+            enable: ui.enabled.checked,
+            func: {
+              srcRGB,
+              dstRGB,
+              srcAlpha,
+              dstAlpha
+            },
+            equation: {
+              rgb: equationRGB,
+              alpha: equationAlpha
+            },
+            color: hexToRgba(ui.blendColor.value)
+          }
+        }
+
+        for (const element of document.querySelectorAll('.debug-panel select, .debug-panel input')) {
+          element.addEventListener('input', refresh)
+          element.addEventListener('change', refresh)
+        }
+
+        applyPreset('alpha')
+
+        const draw = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            uniform float angle;
+            uniform vec2 offset;
+            void main () {
+              float s = sin(angle), c = cos(angle);
+              vec2 p = mat2(c, -s, s, c) * position * 0.95 + offset;
+              gl_Position = vec4(p, 0, 1);
+            }
+          `,
+          frag: `
+            precision mediump float;
+            uniform vec4 color;
+            void main () { gl_FragColor = color; }
+          `,
+          attributes: {
+            position: [[-0.9, -0.9], [0.9, -0.9], [0, 0.9]]
+          },
+          uniforms: {
+            color: regl.prop('color'),
+            angle: regl.prop('angle'),
+            offset: regl.prop('offset')
+          },
+          blend: regl.prop('blend'),
+          colorMask: regl.prop('colorMask'),
+          depth: { enable: false },
+          count: 3
+        })
+
+        regl.frame(({ time }) => {
+          regl.clear({ color: [0.02, 0.03, 0.05, 1] })
+          const opacity = parseFloat(ui.opacity.value)
+          const blend = currentBlend
+          const colorMask = currentColorMask
+
+          draw({
+            angle: -0.4 + Math.sin(time * 0.4) * 0.25,
+            offset: [-0.38, -0.05],
+            color: [1.0, 0.32, 0.22, opacity],
+            blend,
+            colorMask
+          })
+          draw({
+            angle: 0.5 + Math.cos(time * 0.35) * 0.3,
+            offset: [0.0, 0.16],
+            color: [0.25, 0.82, 1.0, opacity],
+            blend,
+            colorMask
+          })
+          draw({
+            angle: 1.1 + Math.sin(time * 0.25) * 0.25,
+            offset: [0.4, -0.08],
+            color: [0.85, 0.45, 1.0, opacity],
+            blend,
+            colorMask
+          })
+
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

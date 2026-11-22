@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next FPS: WebGL2</title>
+    <link rel="stylesheet" href="fps.css" />
+  </head>
+  <body class="fps">
+    <canvas id="canvas"></canvas>
+
+    <div class="fps-hud">
+      <div class="fps-top">
+        <div class="fps-panel">
+          SCORE <strong id="hud-score">00000</strong>
+          <div class="fps-health"><i id="hud-health-bar"></i></div>
+          <div>HEALTH <strong id="hud-health">100</strong></div>
+        </div>
+        <div class="fps-panel fps-right">
+          AMMO <strong id="hud-ammo">30</strong>
+          <div class="fps-enemies">HOSTILES <strong id="hud-enemies">6 / 6</strong></div>
+        </div>
+      </div>
+      <div id="crosshair" class="fps-crosshair"></div>
+      <div id="hud-damage" class="fps-damage"></div>
+      <div class="fps-bottom" id="hud-message">
+        WASD MOVE · MOUSE AIM · CLICK FIRE · R RELOAD
+      </div>
+      <div class="fps-start" id="fps-start">
+        <div class="fps-start-card">
+          <h1>NEON BREACH // WEBGL2</h1>
+          <p>
+            <span class="accent">FPS 射击演示</span>：WebGL2 实例化渲染、
+            depth test、动态光照与第一人称武器。
+          </p>
+          <p>
+            击杀全部 6 个敌方无人机。敌人靠近会反击；生命值低时注意红色警告。
+          </p>
+          <p class="keys">点击开始 · WASD 移动 · 鼠标瞄准 · 左键射击 · R 换弹 · Space 跳跃</p>
+        </div>
+      </div>
+    </div>
+
+    <script src="math.js"></script>
+    <script src="ui.js"></script>
+    <script src="fps-game.js"></script>
+    <script src="../dist/regl-next.iife.js"></script>
+    <script>
+      try {
+        const canvas = document.getElementById('canvas')
+        const game = FPSGame.create(canvas)
+
+        const regl = createREGL({
+          canvas,
+          version: 2,
+          attributes: {
+            antialias: true,
+            alpha: false,
+            depth: true
+          }
+        })
+
+        // Unit cube: 6 faces, 24 vertices, position + normal.
+        const cubePositions = []
+        const cubeNormals = []
+        const cubeIndices = []
+        const faces = [
+          { n: [1, 0, 0], p: [[0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5]] },
+          { n: [-1, 0, 0], p: [[-0.5, -0.5, 0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [-0.5, 0.5, 0.5]] },
+          { n: [0, 1, 0], p: [[-0.5, 0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]] },
+          { n: [0, -1, 0], p: [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [-0.5, -0.5, -0.5]] },
+          { n: [0, 0, 1], p: [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]] },
+          { n: [0, 0, -1], p: [[0.5, -0.5, -0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5]] }
+        ]
+        for (let f = 0; f < faces.length; ++f) {
+          const face = faces[f]
+          const base = f * 4
+          for (let i = 0; i < 4; ++i) {
+            cubePositions.push(...face.p[i])
+            cubeNormals.push(...face.n)
+          }
+          cubeIndices.push(base, base + 1, base + 2, base, base + 2, base + 3)
+        }
+
+        const positionBuffer = regl.buffer(new Float32Array(cubePositions))
+        const normalBuffer = regl.buffer(new Float32Array(cubeNormals))
+        const elements = regl.elements(new Uint16Array(cubeIndices))
+
+        const stride = 22 * 4
+        const instanceCapacity = game.maxInstances
+        const instanceData = new Float32Array(instanceCapacity * 22)
+        const instanceBuffer = regl.buffer({
+          data: new Float32Array(instanceCapacity * 22),
+          usage: 'dynamic'
+        })
+
+        const draw = regl({
+          vert: `
+            precision highp float;
+            attribute vec3 aPosition;
+            attribute vec3 aNormal;
+            attribute vec4 iModel0;
+            attribute vec4 iModel1;
+            attribute vec4 iModel2;
+            attribute vec4 iModel3;
+            attribute vec4 iColor;
+            attribute float iEmissive;
+            attribute float iKind;
+
+            uniform mat4 uViewProj;
+            varying vec3 vWorld;
+            varying vec3 vNormal;
+            varying vec4 vColor;
+            varying float vEmissive;
+            varying float vKind;
+
+            void main () {
+              mat4 model = mat4(iModel0, iModel1, iModel2, iModel3);
+              vec4 world = model * vec4(aPosition, 1.0);
+              vWorld = world.xyz;
+              vNormal = normalize(mat3(model) * aNormal);
+              vColor = iColor;
+              vEmissive = iEmissive;
+              vKind = iKind;
+              gl_Position = uViewProj * world;
+            }
+          `,
+          frag: `
+            precision highp float;
+            uniform vec3 uCamera;
+            uniform vec3 uMuzzle;
+            uniform float uTime;
+            varying vec3 vWorld;
+            varying vec3 vNormal;
+            varying vec4 vColor;
+            varying float vEmissive;
+            varying float vKind;
+
+            void main () {
+              vec3 N = normalize(vNormal);
+              vec3 albedo = vColor.rgb;
+
+              if (vKind > 0.5 && vKind < 1.5) {
+                vec2 grid = abs(fract(vWorld.xz * 0.5) - 0.5);
+                float line = 1.0 - smoothstep(0.015, 0.055, min(grid.x, grid.y));
+                albedo = mix(albedo, vec3(0.03, 0.35, 0.55), line * 0.9);
+              }
+
+              if (vKind > 1.5 && vKind < 2.5) {
+                albedo *= 0.7 + 0.3 * sin(uTime * 5.0 + vWorld.x);
+              }
+
+              vec3 lightDir = normalize(vec3(-0.4, 0.85, 0.35));
+              float diffuse = max(dot(N, lightDir), 0.0);
+              vec3 V = normalize(uCamera - vWorld);
+              float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+
+              vec3 toMuzzle = uMuzzle - vWorld;
+              float muzzleDist = length(toMuzzle);
+              float muzzleLight = max(0.0, 1.0 - muzzleDist / 8.0);
+              vec3 light = vec3(0.18 + 0.8 * diffuse);
+              light += normalize(toMuzzle + 0.0001) * muzzleLight * 1.4;
+
+              vec3 color = albedo * light;
+              color += albedo * vEmissive * (1.2 + 0.5 * (vKind > 3.5 ? 1.0 : 0.0));
+              color += rim * vec3(0.08, 0.28, 0.5);
+
+              float fog = smoothstep(14.0, 34.0, distance(uCamera, vWorld));
+              color = mix(color, vec3(0.015, 0.025, 0.045), fog * 0.9);
+
+              gl_FragColor = vec4(color, 1.0);
+            }
+          `,
+          attributes: {
+            aPosition: positionBuffer,
+            aNormal: normalBuffer,
+            iModel0: { buffer: instanceBuffer, size: 4, stride: stride, offset: 0, divisor: 1 },
+            iModel1: { buffer: instanceBuffer, size: 4, stride: stride, offset: 16, divisor: 1 },
+            iModel2: { buffer: instanceBuffer, size: 4, stride: stride, offset: 32, divisor: 1 },
+            iModel3: { buffer: instanceBuffer, size: 4, stride: stride, offset: 48, divisor: 1 },
+            iColor: { buffer: instanceBuffer, size: 4, stride: stride, offset: 64, divisor: 1 },
+            iEmissive: { buffer: instanceBuffer, size: 1, stride: stride, offset: 80, divisor: 1 },
+            iKind: { buffer: instanceBuffer, size: 1, stride: stride, offset: 84, divisor: 1 }
+          },
+          elements: elements,
+          count: 36,
+          instances: regl.prop('instances'),
+          uniforms: {
+            uViewProj: regl.prop('viewProj'),
+            uCamera: regl.prop('camera'),
+            uMuzzle: regl.prop('muzzle'),
+            uTime: regl.prop('time')
+          },
+          depth: { enable: true, func: 'less', mask: true },
+          cull: { enable: false },
+          primitive: 'triangles'
+        })
+
+        function resize () {
+          const dpr = Math.min(2, window.devicePixelRatio || 1)
+          const width = Math.max(1, Math.floor(window.innerWidth * dpr))
+          const height = Math.max(1, Math.floor(window.innerHeight * dpr))
+          if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width
+            canvas.height = height
+          }
+          regl.poll()
+        }
+        window.addEventListener('resize', resize)
+        resize()
+
+        let last = performance.now()
+        let started = false
+        regl.frame(({ time }) => {
+          resize()
+          const now = performance.now()
+          const dt = (now - last) / 1000
+          last = now
+
+          game.update(dt)
+          const instances = game.buildInstances()
+          let offset = 0
+          for (let i = 0; i < instances.length; ++i) {
+            const inst = instances[i]
+            instanceData.set(inst.model, offset); offset += 16
+            instanceData[offset++] = inst.color[0]
+            instanceData[offset++] = inst.color[1]
+            instanceData[offset++] = inst.color[2]
+            instanceData[offset++] = inst.color[3]
+            instanceData[offset++] = inst.emissive
+            instanceData[offset++] = inst.kind
+          }
+          instanceBuffer.subdata(instanceData.subarray(0, offset))
+
+          const viewProj = game.viewProjection()
+          regl.clear({
+            color: [0.012, 0.018, 0.03, 1],
+            depth: 1
+          })
+          draw({
+            viewProj: viewProj,
+            camera: game.state.camera,
+            muzzle: game.state.muzzle,
+            time: game.state.time,
+            instances: instances.length
+          })
+
+          if (!started) {
+            started = true
+            window.markExampleReady()
+          }
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

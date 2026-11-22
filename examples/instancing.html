@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: WebGL2 instancing</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>WebGL2 Instancing</h1>
+      <p>
+        <code>instances</code> + attribute 的 <code>divisor: 1</code>；
+        WebGL2 原生实例化，不需要 <code>ANGLE_instanced_arrays</code>。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({
+          container: document.body,
+          version: 2
+        })
+
+        const COUNT = 1400
+        const offsets = new Float32Array(COUNT * 2)
+        const colors = new Float32Array(COUNT * 4)
+        for (let i = 0; i < COUNT; ++i) {
+          offsets[i * 2] = Math.random() * 2 - 1
+          offsets[i * 2 + 1] = Math.random() * 2 - 1
+          const a = Math.random() * Math.PI * 2
+          colors[i * 4] = 0.45 + 0.55 * Math.cos(a)
+          colors[i * 4 + 1] = 0.45 + 0.55 * Math.sin(a)
+          colors[i * 4 + 2] = 0.75 + 0.25 * Math.random()
+          colors[i * 4 + 3] = 0.65
+        }
+
+        const offsetBuffer = regl.buffer(offsets)
+        const colorBuffer = regl.buffer(colors)
+
+        const draw = regl({
+          vert: `#version 300 es
+            in vec2 position;
+            in vec2 offset;
+            in vec4 color;
+            uniform float time;
+            out vec4 vColor;
+            void main () {
+              vec2 p = position + offset;
+              p += 0.018 * vec2(
+                sin(time + offset.y * 9.0),
+                cos(time + offset.x * 7.0)
+              );
+              gl_Position = vec4(p, 0, 1);
+              vColor = color;
+            }
+          `,
+          frag: `#version 300 es
+            precision highp float;
+            in vec4 vColor;
+            out vec4 fragColor;
+            void main () { fragColor = vColor; }
+          `,
+          attributes: {
+            position: [[-0.035, -0.03], [0.035, -0.03], [0, 0.04]],
+            offset: {
+              buffer: offsetBuffer,
+              size: 2,
+              divisor: 1
+            },
+            color: {
+              buffer: colorBuffer,
+              size: 4,
+              divisor: 1
+            }
+          },
+          instances: COUNT,
+          count: 3,
+          uniforms: {
+            time: regl.context('time')
+          },
+          depth: { enable: false },
+          blend: {
+            enable: true,
+            func: { src: 'src alpha', dst: 'one' }
+          }
+        })
+
+        regl.frame(() => {
+          regl.clear({ color: [0.02, 0.03, 0.05, 1] })
+          draw()
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

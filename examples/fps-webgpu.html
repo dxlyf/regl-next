@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next FPS: WebGPU</title>
+    <link rel="stylesheet" href="fps.css" />
+  </head>
+  <body class="fps">
+    <canvas id="canvas"></canvas>
+
+    <div class="fps-hud">
+      <div class="fps-top">
+        <div class="fps-panel">
+          SCORE <strong id="hud-score">00000</strong>
+          <div class="fps-health"><i id="hud-health-bar"></i></div>
+          <div>HEALTH <strong id="hud-health">100</strong></div>
+        </div>
+        <div class="fps-panel fps-right">
+          AMMO <strong id="hud-ammo">30</strong>
+          <div class="fps-enemies">HOSTILES <strong id="hud-enemies">6 / 6</strong></div>
+        </div>
+      </div>
+      <div id="crosshair" class="fps-crosshair"></div>
+      <div id="hud-damage" class="fps-damage"></div>
+      <div class="fps-bottom" id="hud-message">
+        WASD MOVE · MOUSE AIM · CLICK FIRE · R RELOAD
+      </div>
+      <div class="fps-start" id="fps-start">
+        <div class="fps-start-card">
+          <h1>NEON BREACH // WEBGPU</h1>
+          <p>
+            <span class="accent">FPS 射击演示</span>：WebGPU storage-buffer
+            instancing、depth24plus、WGSL 光照与第一人称武器。
+          </p>
+          <p>
+            击杀全部 6 个敌方无人机。敌人靠近会反击；生命值低时注意红色警告。
+          </p>
+          <p class="keys">点击开始 · WASD 移动 · 鼠标瞄准 · 左键射击 · R 换弹 · Space 跳跃</p>
+        </div>
+      </div>
+    </div>
+
+    <script src="math.js"></script>
+    <script src="ui.js"></script>
+    <script src="fps-game.js"></script>
+    <script src="../dist/regl-next.iife.js"></script>
+    <script>
+      ;(async function () {
+        try {
+          const canvas = document.getElementById('canvas')
+          const game = FPSGame.create(canvas)
+
+          if (!navigator.gpu || !window.createWEBGPU) {
+            throw new Error('WebGPU is not available in this browser')
+          }
+
+          const gpu = await createWEBGPU({ canvas })
+
+          // Unit cube: 6 faces * 4 vertices, position + normal interleaved.
+          const vertices = []
+          const indices = []
+          const faces = [
+            { n: [1, 0, 0], p: [[0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5]] },
+            { n: [-1, 0, 0], p: [[-0.5, -0.5, 0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [-0.5, 0.5, 0.5]] },
+            { n: [0, 1, 0], p: [[-0.5, 0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]] },
+            { n: [0, -1, 0], p: [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [-0.5, -0.5, -0.5]] },
+            { n: [0, 0, 1], p: [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]] },
+            { n: [0, 0, -1], p: [[0.5, -0.5, -0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5]] }
+          ]
+          for (let f = 0; f < faces.length; ++f) {
+            const face = faces[f]
+            const base = f * 4
+            for (let i = 0; i < 4; ++i) {
+              vertices.push(face.p[i][0], face.p[i][1], face.p[i][2])
+              vertices.push(face.n[0], face.n[1], face.n[2])
+            }
+            indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
+          }
+
+          const vertexBuffer = gpu.buffer({
+            data: new Float32Array(vertices),
+            usage: ['vertex']
+          })
+          const indexBuffer = gpu.buffer({
+            data: new Uint16Array(indices),
+            usage: ['index']
+          })
+
+          const maxInstances = game.maxInstances
+          const instanceStrideBytes = 96
+          const instanceBuffer = gpu.buffer({
+            size: maxInstances * instanceStrideBytes,
+            usage: ['storage', 'copy-dst']
+          })
+          const instanceData = new Float32Array(maxInstances * 24)
+
+          const globalsBuffer = gpu.buffer({
+            data: new Float32Array(28),
+            usage: ['uniform']
+          })
+          const globalsData = new Float32Array(28)
+
+          const wgsl = `
+            struct Globals {
+              viewProj: mat4x4<f32>,
+              camera: vec4<f32>,
+              muzzle: vec4<f32>,
+              time: f32,
+              pad0: f32,
+              pad1: f32,
+              pad2: f32
+            };
+
+            struct Instance {
+              model: mat4x4<f32>,
+              color: vec4<f32>,
+              emissive: f32,
+              kind: f32,
+              pad0: f32,
+              pad1: f32
+            };
+
+            @group(0) @binding(0) var<uniform> globals: Globals;
+            @group(0) @binding(1) var<storage, read> instances: array<Instance>;
+
+            struct VSOut {
+              @builtin(position) pos: vec4<f32>,
+              @location(0) world: vec3<f32>,
+              @location(1) normal: vec3<f32>,
+              @location(2) color: vec4<f32>,
+              @location(3) emissive: f32,
+              @location(4) kind: f32
+            };
+
+            @vertex fn vs_main(
+              @location(0) position: vec3<f32>,
+              @location(1) normal: vec3<f32>,
+              @builtin(instance_index) instanceIndex: u32
+            ) -> VSOut {
+              let inst = instances[instanceIndex];
+              let world = inst.model * vec4<f32>(position, 1.0);
+              var out: VSOut;
+              out.pos = globals.viewProj * world;
+              out.world = world.xyz;
+              out.normal = normalize((inst.model * vec4<f32>(normal, 0.0)).xyz);
+              out.color = inst.color;
+              out.emissive = inst.emissive;
+              out.kind = inst.kind;
+              return out;
+            }
+
+            @fragment fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
+              let N = normalize(input.normal);
+              var albedo = input.color.rgb;
+
+              if (input.kind > 0.5 && input.kind < 1.5) {
+                let grid = abs(fract(input.world.xz * 0.5) - 0.5);
+                let line = 1.0 - smoothstep(0.015, 0.055, min(grid.x, grid.y));
+                albedo = mix(albedo, vec3<f32>(0.03, 0.35, 0.55), line * 0.9);
+              }
+
+              if (input.kind > 1.5 && input.kind < 2.5) {
+                albedo *= 0.7 + 0.3 * sin(globals.time * 5.0 + input.world.x);
+              }
+
+              let lightDir = normalize(vec3<f32>(-0.4, 0.85, 0.35));
+              let diffuse = max(dot(N, lightDir), 0.0);
+              let V = normalize(globals.camera.xyz - input.world);
+              let rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+
+              let toMuzzle = globals.muzzle.xyz - input.world;
+              let muzzleDist = length(toMuzzle);
+              let muzzleLight = max(0.0, 1.0 - muzzleDist / 8.0);
+              var light = vec3<f32>(0.18 + 0.8 * diffuse);
+              light += normalize(toMuzzle + vec3<f32>(0.0001)) * muzzleLight * 1.4;
+
+              var color = albedo * light;
+              color += albedo * input.emissive * (1.2 + 0.5 * select(0.0, 1.0, input.kind > 3.5));
+              color += rim * vec3<f32>(0.08, 0.28, 0.5);
+
+              let fog = smoothstep(14.0, 34.0, distance(globals.camera.xyz, input.world));
+              color = mix(color, vec3<f32>(0.015, 0.025, 0.045), fog * 0.9);
+              return vec4<f32>(color, 1.0);
+            }
+          `
+
+          const draw = gpu({
+            code: wgsl,
+            format: gpu.format,
+            attributes: {
+              position: {
+                buffer: vertexBuffer,
+                size: 3,
+                stride: 24,
+                offset: 0
+              },
+              normal: {
+                buffer: vertexBuffer,
+                size: 3,
+                stride: 24,
+                offset: 12
+              }
+            },
+            bindings: [
+              { binding: 0, kind: 'uniform', resource: globalsBuffer },
+              { binding: 1, kind: 'read-only-storage', resource: instanceBuffer }
+            ],
+            indexBuffer: {
+              buffer: indexBuffer,
+              format: 'uint16'
+            },
+            count: 36,
+            instances: 0,
+            depth: {
+              format: 'depth24plus',
+              depthWriteEnabled: true,
+              depthCompare: 'less'
+            }
+          })
+
+          let depthTexture = null
+          let depthWidth = 0
+          let depthHeight = 0
+          function ensureDepth () {
+            if (depthTexture && depthWidth === canvas.width && depthHeight === canvas.height) {
+              return
+            }
+            if (depthTexture) depthTexture.destroy()
+            depthTexture = gpu.texture({
+              width: canvas.width,
+              height: canvas.height,
+              format: 'depth24plus',
+              usage: ['render-attachment']
+            })
+            depthWidth = canvas.width
+            depthHeight = canvas.height
+          }
+
+          function resize () {
+            const dpr = Math.min(2, window.devicePixelRatio || 1)
+            const width = Math.max(1, Math.floor(window.innerWidth * dpr))
+            const height = Math.max(1, Math.floor(window.innerHeight * dpr))
+            if (canvas.width !== width || canvas.height !== height) {
+              canvas.width = width
+              canvas.height = height
+            }
+            ensureDepth()
+          }
+          window.addEventListener('resize', resize)
+          resize()
+
+          let last = performance.now()
+          let started = false
+          gpu.frame(({ time }) => {
+            resize()
+            const now = performance.now()
+            const dt = (now - last) / 1000
+            last = now
+
+            game.update(dt)
+            const instances = game.buildInstances()
+            instanceData.fill(0)
+            let offset = 0
+            for (let i = 0; i < instances.length; ++i) {
+              const inst = instances[i]
+              instanceData.set(inst.model, offset); offset += 16
+              instanceData[offset++] = inst.color[0]
+              instanceData[offset++] = inst.color[1]
+              instanceData[offset++] = inst.color[2]
+              instanceData[offset++] = inst.color[3]
+              instanceData[offset++] = inst.emissive
+              instanceData[offset++] = inst.kind
+              offset += 2
+            }
+            instanceBuffer.write(
+              instanceData.subarray(0, Math.max(24, offset))
+            )
+
+            const viewProj = game.viewProjection()
+            globalsData.set(viewProj, 0)
+            globalsData[16] = game.state.camera[0]
+            globalsData[17] = game.state.camera[1]
+            globalsData[18] = game.state.camera[2]
+            globalsData[19] = 1
+            globalsData[20] = game.state.muzzle[0]
+            globalsData[21] = game.state.muzzle[1]
+            globalsData[22] = game.state.muzzle[2]
+            globalsData[23] = 1
+            globalsData[24] = game.state.time
+            globalsBuffer.write(globalsData)
+
+            gpu.render(
+              {
+                clearColor: [0.012, 0.018, 0.03, 1],
+                depth: depthTexture,
+                clearDepth: 1
+              },
+              (pass) => {
+                draw.draw(pass, { instances: instances.length })
+              }
+            )
+
+            if (!started) {
+              started = true
+              window.markExampleReady()
+            }
+          })
+        } catch (error) {
+          window.showExampleError(error)
+        }
+      })()
+    </script>
+  </body>
+</html>

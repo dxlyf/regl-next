@@ -1,0 +1,70 @@
+{
+  "name": "@dxyl/regl-next",
+  "version": "0.1.0",
+  "description": "regl-next：用 TypeScript 重写的函数式 WebGL 框架，同时支持 WebGL1 / WebGL2，并提供 WebGPU-first PoC",
+  "type": "module",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dxlyf/regl-next.git"
+  },
+  "homepage": "https://github.com/dxlyf/regl-next#readme",
+  "bugs": {
+    "url": "https://github.com/dxlyf/regl-next/issues"
+  },
+  "main": "./dist/regl-next.cjs",
+  "module": "./dist/regl-next.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/regl-next.js",
+      "require": "./dist/regl-next.cjs"
+    },
+    "./webgpu": {
+      "types": "./dist/types/webgpu/index.d.ts",
+      "import": "./dist/regl-next-webgpu.js",
+      "require": "./dist/regl-next-webgpu.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@webgpu/types": "^0.1.74"
+  },
+  "scripts": {
+    "build": "npm run build:types && npm run build:js",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build:js": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:browser": "node test/browser/run.mjs",
+    "test:examples": "node test/examples/run.mjs",
+    "test:webgpu": "node test/webgpu/run.mjs",
+    "test:types": "tsc -p test/types/tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "regl",
+    "webgl",
+    "webgl2",
+    "webgpu",
+    "typescript",
+    "graphics",
+    "functional"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.49.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

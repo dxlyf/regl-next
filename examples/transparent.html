@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: transparent</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Transparent 透明排序</h1>
+      <p>
+        三个半透明三角形不写深度（<code>depth.mask: false</code>），
+        因此绘制顺序会影响结果。点击切换正确排序 / 错误排序。
+      </p>
+      <p id="mode"></p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({ container: document.body })
+
+        let sorted = true
+
+        const draw = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            uniform vec2 offset;
+            uniform float z;
+            void main () {
+              gl_Position = vec4(position * 0.95 + offset, z, 1);
+            }
+          `,
+          frag: `
+            precision mediump float;
+            uniform vec4 color;
+            void main () { gl_FragColor = color; }
+          `,
+          attributes: {
+            position: [[-0.9, -0.9], [0.9, -0.9], [0, 0.9]]
+          },
+          uniforms: {
+            color: regl.prop('color'),
+            offset: regl.prop('offset'),
+            z: regl.prop('z')
+          },
+          blend: {
+            enable: true,
+            func: { src: 'src alpha', dst: 'one minus src alpha' }
+          },
+          depth: { enable: true, mask: false },
+          count: 3
+        })
+
+        const objects = [
+          {
+            name: 'far',
+            z: 0.4,
+            offset: [0.0, 0.0],
+            color: [1.0, 0.28, 0.2, 0.5]
+          },
+          {
+            name: 'mid',
+            z: 0.0,
+            offset: [-0.32, 0.05],
+            color: [0.25, 0.85, 0.55, 0.5]
+          },
+          {
+            name: 'near',
+            z: -0.4,
+            offset: [0.32, -0.05],
+            color: [0.3, 0.55, 1.0, 0.5]
+          }
+        ]
+
+        function updateLabel () {
+          document.getElementById('mode').textContent =
+            'draw order: ' + (sorted ? 'far → near（正确）' : 'near → far（错误）')
+        }
+        updateLabel()
+
+        // 透明物体不写深度；清除时恢复 depth mask
+        const clearScreen = regl({
+          depth: { enable: false, mask: true }
+        })
+
+        window.addEventListener('pointerdown', () => {
+          sorted = !sorted
+          updateLabel()
+        })
+
+        regl.frame(() => {
+          clearScreen(() => {
+            regl.clear({ color: [0.02, 0.03, 0.05, 1], depth: 1 })
+          })
+          const order = sorted ? objects : objects.slice().reverse()
+          for (const object of order) draw(object)
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: 基础三角形</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>基础三角形</h1>
+      <p>
+        最小 regl 命令：<code>attributes</code> + <code>uniforms</code> +
+        <code>count</code>，用 <code>regl.context('time')</code> 驱动旋转。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({
+          container: document.body,
+          version: 'auto',
+          attributes: { antialias: true }
+        })
+
+        const draw = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            uniform float angle;
+            void main () {
+              float s = sin(angle), c = cos(angle);
+              gl_Position = vec4(mat2(c, -s, s, c) * position, 0, 1);
+            }
+          `,
+          frag: `
+            precision mediump float;
+            uniform vec4 color;
+            void main () { gl_FragColor = color; }
+          `,
+          attributes: {
+            position: [[-0.55, -0.55], [0.55, -0.55], [0, 0.55]]
+          },
+          uniforms: {
+            angle: regl.context('time'),
+            color: [1.0, 0.45, 0.2, 1.0]
+          },
+          count: 3,
+          depth: { enable: false }
+        })
+
+        regl.frame(() => {
+          regl.clear({ color: [0.04, 0.05, 0.07, 1] })
+          draw()
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

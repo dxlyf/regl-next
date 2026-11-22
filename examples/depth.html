@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: depth</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Depth Test 深度测试</h1>
+      <p>
+        青色三角形在前、红色在后，但先画青色。开启 depth 时青色保持；
+        关闭 depth 后红色会覆盖青色。点击切换。
+      </p>
+      <p id="mode"></p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({ container: document.body })
+
+        let depthEnabled = true
+
+        const draw = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            uniform vec2 offset;
+            uniform float z;
+            void main () {
+              gl_Position = vec4(position * 0.82 + offset, z, 1);
+            }
+          `,
+          frag: `
+            precision mediump float;
+            uniform vec4 color;
+            void main () { gl_FragColor = color; }
+          `,
+          attributes: {
+            position: [
+              [-0.55, -0.55], [0.55, -0.55], [0.55, 0.55],
+              [-0.55, -0.55], [0.55, 0.55], [-0.55, 0.55]
+            ]
+          },
+          uniforms: {
+            color: regl.prop('color'),
+            offset: regl.prop('offset'),
+            z: regl.prop('z')
+          },
+          depth: regl.prop('depth'),
+          count: 6
+        })
+
+        function updateLabel () {
+          document.getElementById('mode').textContent =
+            'depth: ' + (depthEnabled ? 'ON' : 'OFF')
+        }
+        updateLabel()
+
+        window.addEventListener('pointerdown', () => {
+          depthEnabled = !depthEnabled
+          updateLabel()
+        })
+
+        regl.frame(() => {
+          regl.clear({ color: [0.02, 0.03, 0.05, 1], depth: 1 })
+          const depth = depthEnabled
+            ? { enable: true, func: 'less', mask: true }
+            : { enable: false }
+
+          // 先画近处的青色
+          draw({
+            z: -0.4,
+            offset: [-0.24, 0.0],
+            color: [0.25, 0.85, 1.0, 1.0],
+            depth
+          })
+          // 再画远处的红色；depth 关闭时会盖住青色
+          draw({
+            z: 0.4,
+            offset: [0.24, 0.0],
+            color: [1.0, 0.28, 0.2, 1.0],
+            depth
+          })
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

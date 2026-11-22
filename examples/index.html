@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next 示例</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="index">
+    <main class="wrap">
+      <header class="hero">
+        <div class="eyebrow">regl-next examples</div>
+        <h1>从三角形到 WebGL2</h1>
+        <p>
+          这些示例覆盖 regl 的常见使用场景：命令、动态值、batch、scope、
+          elements、texture、framebuffer、3D、UBO、sampler object 与实例化。
+          每个页面都可以直接在浏览器中打开，源码在页面内可读。
+        </p>
+        <div class="cmd">npm run build &nbsp;→&nbsp; 打开 examples/index.html</div>
+      </header>
+
+      <section class="group">
+        <h2>基础</h2>
+        <div class="grid">
+          <a class="card" href="triangle.html">
+            <span class="tag">draw</span>
+            <h3>基础三角形</h3>
+            <p>attributes + uniforms + count，用 context time 驱动旋转。</p>
+            <span class="path">triangle.html</span>
+          </a>
+          <a class="card" href="points.html">
+            <span class="tag">points</span>
+            <h3>Points 与 gl_PointCoord</h3>
+            <p>gl_PointSize、圆形光点、加法混合与 900 个粒子。</p>
+            <span class="path">points.html</span>
+          </a>
+          <a class="card" href="elements.html">
+            <span class="tag">elements</span>
+            <h3>Elements 索引绘制</h3>
+            <p>共享顶点 + 索引缓冲，用 elements 代替 count。</p>
+            <span class="path">elements.html</span>
+          </a>
+          <a class="card" href="vao.html">
+            <span class="tag">vao</span>
+            <h3>VAO 顶点数组对象</h3>
+            <p>把 attribute 数据与布局打包到 VAO，命令用 vao 选项复用。</p>
+            <span class="path">vao.html</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>命令组织</h2>
+        <div class="grid">
+          <a class="card" href="batch.html">
+            <span class="tag">batch</span>
+            <h3>Batch 批量绘制</h3>
+            <p>同一命令执行数组 props，每个实例不同 viewport 与颜色。</p>
+            <span class="path">batch.html</span>
+          </a>
+          <a class="card" href="scope.html">
+            <span class="tag">scope</span>
+            <h3>Scope 作用域</h3>
+            <p>scope 设置 viewport / uniform，子命令继承状态。</p>
+            <span class="path">scope.html</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>状态与透明</h2>
+        <div class="grid">
+          <a class="card" href="blend.html">
+            <span class="tag">blend</span>
+            <h3>Blend 混合调试</h3>
+            <p>src/dst 因子、RGB/Alpha 方程、blend.color、colorMask 全部可调。</p>
+            <span class="path">blend.html</span>
+          </a>
+          <a class="card" href="depth.html">
+            <span class="tag">depth</span>
+            <h3>Depth Test 深度测试</h3>
+            <p>先画近处物体，切换 depth 观察远处物体是否被遮挡。</p>
+            <span class="path">depth.html</span>
+          </a>
+          <a class="card" href="stencil.html">
+            <span class="tag">stencil</span>
+            <h3>Stencil 模板测试</h3>
+            <p>用圆形写入 stencil，再只在这个窗口内绘制全屏渐变。</p>
+            <span class="path">stencil.html</span>
+          </a>
+          <a class="card" href="scissor.html">
+            <span class="tag">scissor</span>
+            <h3>Scissor 裁剪</h3>
+            <p>全屏 shader 只在一个动态矩形内生效。</p>
+            <span class="path">scissor.html</span>
+          </a>
+          <a class="card" href="transparent.html">
+            <span class="tag">transparent</span>
+            <h3>Transparent 透明排序</h3>
+            <p>透明物体不写深度，切换正确 / 错误的绘制顺序。</p>
+            <span class="path">transparent.html</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>WebGL2</h2>
+        <div class="grid">
+          <a class="card" href="texture-sampler.html">
+            <span class="tag">sampler</span>
+            <h3>Texture + Sampler Object</h3>
+            <p>sampler 对象控制过滤与 wrap，点击切换 nearest / linear。</p>
+            <span class="path">texture-sampler.html</span>
+          </a>
+          <a class="card" href="texture-array.html">
+            <span class="tag">array texture</span>
+            <h3>2D Array Texture</h3>
+            <p>4 层纹理 + sampler2DArray，z 坐标选择当前层。</p>
+            <span class="path">texture-array.html</span>
+          </a>
+          <a class="card" href="mrt.html">
+            <span class="tag">mrt</span>
+            <h3>MRT 多渲染目标</h3>
+            <p>一个 FBO 两张颜色纹理，fragment 输出两个附件。</p>
+            <span class="path">mrt.html</span>
+          </a>
+          <a class="card" href="msaa.html">
+            <span class="tag">msaa</span>
+            <h3>MSAA + Blit Resolve</h3>
+            <p>samples: 4 的 framebuffer，通过 blitFramebuffer resolve 到 texture。</p>
+            <span class="path">msaa.html</span>
+          </a>
+          <a class="card" href="ubo.html">
+            <span class="tag">ubo</span>
+            <h3>Uniform Block</h3>
+            <p>Phase 2 结构化 UBO，按 std140 反射布局自动打包。</p>
+            <span class="path">ubo.html</span>
+          </a>
+          <a class="card" href="instancing.html">
+            <span class="tag">instancing</span>
+            <h3>WebGL2 Instancing</h3>
+            <p>divisor = 1 的原生实例化，绘制 1400 个动态三角形。</p>
+            <span class="path">instancing.html</span>
+          </a>
+          <a class="card" href="webgpu.html">
+            <span class="tag">webgpu poc</span>
+            <h3>WebGPU PoC</h3>
+            <p>独立 WebGPU-first 入口：texture / uniform / pipeline / render pass。</p>
+            <span class="path">webgpu.html</span>
+          </a>
+          <a class="card" href="webgpu-depth-msaa.html">
+            <span class="tag">webgpu advanced</span>
+            <h3>WebGPU Depth + MSAA</h3>
+            <p>depth24plus、sampleCount 4、resolveTarget、indexed draw。</p>
+            <span class="path">webgpu-depth-msaa.html</span>
+          </a>
+          <a class="card" href="webgpu-command.html">
+            <span class="tag">webgpu command</span>
+            <h3>WebGPU WGSL Command</h3>
+            <p>regl 风格 <code>gpu({...})</code>，WGSL + 自动 uniform / texture binding。</p>
+            <span class="path">webgpu-command.html</span>
+          </a>
+          <a class="card" href="fps-webgl2.html">
+            <span class="tag">fps · webgl2</span>
+            <h3>Neon Breach: WebGL2 FPS</h3>
+            <p>第一人称移动、射击、敌人 AI、实例化场景与动态光照。</p>
+            <span class="path">fps-webgl2.html</span>
+          </a>
+          <a class="card" href="fps-webgpu.html">
+            <span class="tag">fps · webgpu</span>
+            <h3>Neon Breach: WebGPU FPS</h3>
+            <p>同一 FPS 场景的 WebGPU 版本：storage buffer instancing + WGSL。</p>
+            <span class="path">fps-webgpu.html</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>渲染</h2>
+        <div class="grid">
+          <a class="card" href="cube-map.html">
+            <span class="tag">3d</span>
+            <h3>Cube Map 与 3D 深度</h3>
+            <p>regl.cube + textureCube，projection / view / model 矩阵。</p>
+            <span class="path">cube-map.html</span>
+          </a>
+          <a class="card" href="framebuffer.html">
+            <span class="tag">fbo</span>
+            <h3>Framebuffer 离屏渲染</h3>
+            <p>先渲染到 256×256 framebuffer，再做反色与扫描线后处理。</p>
+            <span class="path">framebuffer.html</span>
+          </a>
+          <a class="card" href="material.html">
+            <span class="tag">material</span>
+            <h3>材质共享一个 Program</h3>
+            <p>15 个立方体共用 shader；几何体装进 VAO，每帧只更新 model/tint。</p>
+            <span class="path">material.html</span>
+          </a>
+        </div>
+      </section>
+
+      <footer class="footer">
+        需要先执行 <code>npm run build</code> 生成 <code>dist/regl-next.iife.js</code>。
+        也可以运行 <code>npm run test:examples</code> 做页面冒烟测试。
+      </footer>
+    </main>
+  </body>
+</html>

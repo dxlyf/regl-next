@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: batch / 多视口</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Batch 批量绘制</h1>
+      <p>
+        同一个命令通过数组 props 批量执行；每个实例使用不同的
+        <code>viewport</code> 和颜色，展示 regl 的 batch 调用方式。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({ container: document.body })
+
+        const drawTile = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            void main () { gl_Position = vec4(position, 0, 1); }
+          `,
+          frag: `
+            precision mediump float;
+            uniform vec4 color;
+            void main () { gl_FragColor = color; }
+          `,
+          attributes: {
+            position: [[-0.9, -0.9], [0.9, -0.9], [0, 0.9]]
+          },
+          uniforms: {
+            color: regl.prop('color')
+          },
+          viewport: regl.prop('viewport'),
+          count: 3,
+          depth: { enable: false }
+        })
+
+        const COLS = 12
+        const ROWS = 8
+        let batch = []
+
+        function rebuild (width, height, time) {
+          const tileW = width / COLS
+          const tileH = height / ROWS
+          batch = []
+          for (let y = 0; y < ROWS; ++y) {
+            for (let x = 0; x < COLS; ++x) {
+              const t = (x / COLS + y / ROWS) * 0.5
+              batch.push({
+                viewport: {
+                  x: x * tileW,
+                  y: y * tileH,
+                  width: tileW,
+                  height: tileH
+                },
+                color: [
+                  0.25 + 0.75 * Math.abs(Math.sin(time * 0.7 + t * 6.0)),
+                  0.2 + 0.8 * Math.abs(Math.cos(time * 0.5 + x * 0.3)),
+                  0.35 + 0.65 * Math.abs(Math.sin(time * 0.9 + y * 0.4)),
+                  1
+                ]
+              })
+            }
+          }
+        }
+
+        regl.frame(({ viewportWidth, viewportHeight, time }) => {
+          regl.clear({ color: [0.03, 0.04, 0.06, 1] })
+          rebuild(viewportWidth, viewportHeight, time)
+          drawTile(batch)
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

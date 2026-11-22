@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: VAO</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>VAO 顶点数组对象</h1>
+      <p>
+        VAO 把「attribute 数据 + 布局」打包成一个对象。命令通过
+        <code>vao</code> 使用它；<code>attributes: { position: 0 }</code>
+        表示 shader 的 <code>position</code> 对应 location 0，不是常量 0，也不是传数据。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({ container: document.body })
+
+        // 数组形式：每一个元素是一个 attribute。
+        // 这里只有一个 attribute，所以它占据 location 0。
+        const vaoTriangle = regl.vao({
+          attributes: [
+            {
+              data: [[-0.75, -0.75], [0.75, -0.75], [0, 0.75]]
+            }
+          ]
+        })
+
+        // 同样是 location 0，但这次有 6 个顶点，组成两个三角形（一个矩形）。
+        const vaoQuad = regl.vao({
+          attributes: [
+            {
+              data: [
+                [-0.6, -0.6], [0.6, -0.6], [0.6, 0.6],
+                [-0.6, -0.6], [0.6, 0.6], [-0.6, 0.6]
+              ]
+            }
+          ]
+        })
+
+        const vert = `
+          precision mediump float;
+          attribute vec2 position;
+          void main () { gl_Position = vec4(position, 0, 1); }
+        `
+        const frag = `
+          precision mediump float;
+          uniform vec4 color;
+          void main () { gl_FragColor = color; }
+        `
+
+        function leftViewport (context) {
+          return {
+            x: 0,
+            y: 0,
+            width: context.drawingBufferWidth / 2,
+            height: context.drawingBufferHeight
+          }
+        }
+
+        function rightViewport (context) {
+          return {
+            x: context.drawingBufferWidth / 2,
+            y: 0,
+            width: context.drawingBufferWidth / 2,
+            height: context.drawingBufferHeight
+          }
+        }
+
+        const drawTriangle = regl({
+          vert,
+          frag,
+          // 关键：VAO 提供顶点数据，命令不再传 position 的 buffer。
+          vao: vaoTriangle,
+          // 当 attributes 的值全是数字时，regl-next 把它们当作
+          // shader attribute 的 location 映射（这里是 0），不是常量值。
+          attributes: { position: 0 },
+          viewport: leftViewport,
+          uniforms: { color: [1.0, 0.4, 0.25, 1.0] },
+          count: 3
+        })
+
+        const drawQuad = regl({
+          vert,
+          frag,
+          vao: vaoQuad,
+          attributes: { position: 0 },
+          viewport: rightViewport,
+          uniforms: { color: [0.3, 0.85, 1.0, 1.0] },
+          count: 6
+        })
+
+        regl.frame(() => {
+          regl.clear({ color: [0.03, 0.04, 0.06, 1] })
+          drawTriangle()
+          drawQuad()
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

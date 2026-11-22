@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: scope / 作用域</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Scope 作用域</h1>
+      <p>
+        scope 命令只负责设置状态与 uniform，不自己绘制；回调里的子命令继承
+        <code>viewport</code> 和 <code>color</code>。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({ container: document.body })
+
+        const triangle = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            uniform float time;
+            void main () {
+              float s = sin(time + position.x * 2.0);
+              float c = cos(time + position.x * 2.0);
+              gl_Position = vec4(mat2(c, -s, s, c) * position * 0.7, 0, 1);
+            }
+          `,
+          frag: `
+            precision mediump float;
+            uniform vec4 color;
+            void main () { gl_FragColor = color; }
+          `,
+          attributes: {
+            position: [[-0.9, -0.9], [0.9, -0.9], [0, 0.9]]
+          },
+          uniforms: {
+            time: regl.context('time')
+          },
+          count: 3,
+          depth: { enable: false }
+        })
+
+        function halfViewport (left) {
+          return (context) => ({
+            x: left ? 0 : context.drawingBufferWidth / 2,
+            y: 0,
+            width: context.drawingBufferWidth / 2,
+            height: context.drawingBufferHeight
+          })
+        }
+
+        const left = regl({
+          viewport: halfViewport(true),
+          uniforms: { color: [1.0, 0.35, 0.25, 1.0] }
+        })
+        const right = regl({
+          viewport: halfViewport(false),
+          uniforms: { color: [0.25, 0.8, 1.0, 1.0] }
+        })
+
+        regl.frame(() => {
+          regl.clear({ color: [0.03, 0.04, 0.06, 1] })
+          left(() => triangle())
+          right(() => triangle())
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

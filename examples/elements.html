@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: elements / indexed triangles</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Elements 索引绘制</h1>
+      <p>
+        <code>regl.elements(...)</code> 创建索引缓冲；命令里用
+        <code>elements</code> 代替 <code>count</code>，绘制两个共享顶点的三角形。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      try {
+        const regl = createREGL({ container: document.body })
+
+        const draw = regl({
+          vert: `
+            precision mediump float;
+            attribute vec2 position;
+            attribute vec3 color;
+            varying vec3 vColor;
+            void main () {
+              gl_Position = vec4(position, 0, 1);
+              vColor = color;
+            }
+          `,
+          frag: `
+            precision mediump float;
+            varying vec3 vColor;
+            void main () { gl_FragColor = vec4(vColor, 1); }
+          `,
+          attributes: {
+            position: [
+              [-0.7, -0.7],
+              [0.7, -0.7],
+              [0.7, 0.7],
+              [-0.7, 0.7]
+            ],
+            color: [
+              [1.0, 0.35, 0.25],
+              [1.0, 0.8, 0.3],
+              [0.3, 0.85, 1.0],
+              [0.6, 0.4, 1.0]
+            ]
+          },
+          elements: regl.elements([0, 1, 2, 0, 2, 3]),
+          depth: { enable: false }
+        })
+
+        regl.frame(() => {
+          regl.clear({ color: [0.04, 0.05, 0.07, 1] })
+          draw()
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>

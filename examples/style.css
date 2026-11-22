@@ -1,0 +1,348 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0d12;
+  --panel: rgba(14, 18, 27, 0.78);
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #e8edf5;
+  --muted: #8f9bad;
+  --accent: #6ee7ff;
+  --accent-2: #ffb86b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(1000px 600px at 15% -10%, #172236 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #241a2c 0%, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "Microsoft YaHei",
+    sans-serif;
+}
+
+body.example {
+  height: 100%;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hud {
+  position: fixed;
+  left: 18px;
+  top: 16px;
+  z-index: 2;
+  max-width: min(560px, calc(100vw - 36px));
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.hud h1 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+.hud p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.hud code {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.hud kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 11px;
+}
+
+/* 可交互调试面板 */
+.debug-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
+  width: min(390px, calc(100vw - 36px));
+  max-height: calc(100vh - 130px);
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(10, 13, 20, 0.9);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+  font-size: 12px;
+}
+
+.debug-panel h2 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.debug-panel .row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 7px 0;
+}
+
+.debug-panel .row > span {
+  color: var(--muted);
+}
+
+.debug-panel select,
+.debug-panel input[type='number'],
+.debug-panel input[type='color'] {
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  font: inherit;
+}
+
+.debug-panel input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.debug-panel .check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 8px 0;
+  color: var(--muted);
+}
+
+.debug-panel .check-row label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--text);
+}
+
+.debug-panel .check-row input {
+  accent-color: var(--accent);
+}
+
+.debug-panel .presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.debug-panel button {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.debug-panel button:hover {
+  border-color: rgba(110, 231, 255, 0.5);
+  background: rgba(110, 231, 255, 0.12);
+}
+
+.debug-panel .status {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.debug-panel .status.invalid {
+  color: #ffb4ba;
+}
+
+.error {
+  position: fixed;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10;
+  max-height: 42vh;
+  overflow: auto;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 100, 110, 0.5);
+  border-radius: 12px;
+  background: rgba(40, 10, 16, 0.92);
+  color: #ffd4d8;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+/* index */
+
+body.index {
+  overflow: auto;
+  padding: 48px 24px 72px;
+}
+
+.wrap {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+}
+
+.hero {
+  margin-bottom: 40px;
+}
+
+.hero .eyebrow {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 10px 0 10px;
+  font-size: clamp(30px, 4vw, 48px);
+  letter-spacing: -0.03em;
+}
+
+.hero p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.75;
+  font-size: 15px;
+}
+
+.hero .cmd {
+  display: inline-block;
+  margin-top: 18px;
+  padding: 9px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.group {
+  margin-top: 34px;
+}
+
+.group h2 {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 150px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.055),
+    rgba(255, 255, 255, 0.015)
+  );
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(110, 231, 255, 0.45);
+  background: linear-gradient(
+    180deg,
+    rgba(110, 231, 255, 0.1),
+    rgba(255, 255, 255, 0.02)
+  );
+}
+
+.card .tag {
+  color: var(--accent-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.card .path {
+  margin-top: auto;
+  color: rgba(232, 237, 245, 0.45);
+  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.footer {
+  margin-top: 46px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}

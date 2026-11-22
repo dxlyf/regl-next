@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: WebGPU depth + MSAA</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <canvas id="canvas"></canvas>
+    <div class="hud">
+      <h1>WebGPU Depth + MSAA</h1>
+      <p>
+        <code>createWEBGPU</code> 的 depth24plus + sampleCount 4：
+        场景渲染到多采样 target，再用 render pass <code>resolveTarget</code>
+        resolve 到 texture，最后采样到 canvas。
+      </p>
+      <p>同时使用 indexed draw 和每根柱子的独立 uniform buffer。</p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script>
+      ;(async function () {
+        try {
+          const canvas = document.getElementById('canvas')
+          canvas.width = Math.floor(window.innerWidth * devicePixelRatio)
+          canvas.height = Math.floor(window.innerHeight * devicePixelRatio)
+
+          if (!navigator.gpu || !window.createWEBGPU) {
+            throw new Error('WebGPU is not available in this browser')
+          }
+
+          const gpu = await createWEBGPU({ canvas })
+          const size = { width: canvas.width, height: canvas.height }
+
+          const msaa = gpu.texture({
+            width: size.width,
+            height: size.height,
+            format: gpu.format,
+            sampleCount: 4,
+            usage: ['render-attachment']
+          })
+          const resolved = gpu.texture({
+            width: size.width,
+            height: size.height,
+            format: gpu.format,
+            usage: [
+              'render-attachment',
+              'copy-src',
+              'texture-binding'
+            ]
+          })
+          const depth = gpu.texture({
+            width: size.width,
+            height: size.height,
+            format: 'depth24plus',
+            sampleCount: 4,
+            usage: ['render-attachment']
+          })
+
+          const vertices = gpu.buffer({
+            data: new Float32Array([
+              -0.9, -0.055,
+               0.9, -0.055,
+               0.0,  0.055
+            ]),
+            usage: ['vertex']
+          })
+          const indices = gpu.buffer({
+            data: new Uint16Array([0, 1, 2]),
+            usage: ['index']
+          })
+
+          const colors = [
+            [1.0, 0.28, 0.2, 1.0],
+            [0.2, 0.85, 0.95, 1.0],
+            [0.9, 0.75, 0.2, 1.0],
+            [0.7, 0.35, 1.0, 1.0]
+          ]
+          const uniforms = colors.map((color, i) =>
+            gpu.buffer({
+              data: new Float32Array([
+                0,
+                0.25 + i * 0.16,
+                0,
+                0,
+                color[0],
+                color[1],
+                color[2],
+                color[3]
+              ]),
+              usage: ['uniform']
+            })
+          )
+
+          const scenePipeline = gpu.pipeline({
+            code: `
+              struct U {
+                angle: f32,
+                depth: f32,
+                pad0: f32,
+                pad1: f32,
+                color: vec4<f32>
+              };
+              @group(0) @binding(0) var<uniform> u: U;
+
+              @vertex fn vs_main(
+                @location(0) position: vec2<f32>
+              ) -> @builtin(position) vec4<f32> {
+                let s = sin(u.angle);
+                let c = cos(u.angle);
+                let p = vec2<f32>(
+                  c * position.x - s * position.y,
+                  s * position.x + c * position.y
+                );
+                return vec4<f32>(p, u.depth, 1.0);
+              }
+
+              @fragment fn fs_main() -> @location(0) vec4<f32> {
+                return u.color;
+              }
+            `,
+            format: gpu.format,
+            attributes: [{ format: 'float32x2', stride: 8 }],
+            bindings: [{ binding: 0, kind: 'uniform' }],
+            depth: {
+              format: 'depth24plus',
+              depthWriteEnabled: true,
+              depthCompare: 'less'
+            },
+            multisample: { count: 4 }
+          })
+
+          const bindGroups = uniforms.map((uniform) =>
+            gpu.bindGroup(scenePipeline, [
+              { binding: 0, resource: uniform }
+            ])
+          )
+
+          const sampler = gpu.sampler({
+            magFilter: 'linear',
+            minFilter: 'linear'
+          })
+          // resolve 结果作为全屏采样的输入。
+          const displayPipeline = gpu.pipeline({
+            code: `
+              @group(0) @binding(0) var tex: texture_2d<f32>;
+              @group(0) @binding(1) var samp: sampler;
+
+              struct VSOut {
+                @builtin(position) pos: vec4<f32>,
+                @location(0) uv: vec2<f32>
+              };
+
+              @vertex fn vs_main(
+                @location(0) position: vec2<f32>,
+                @location(1) uv: vec2<f32>
+              ) -> VSOut {
+                var out: VSOut;
+                out.pos = vec4<f32>(position, 0.0, 1.0);
+                out.uv = uv;
+                return out;
+              }
+
+              @fragment fn fs_main(input: VSOut) -> @location(0) vec4<f32> {
+                return textureSample(tex, samp, input.uv);
+              }
+            `,
+            format: gpu.format,
+            attributes: [
+              { format: 'float32x2', stride: 16, offset: 0 },
+              { format: 'float32x2', stride: 16, offset: 8 }
+            ],
+            bindings: [
+              { binding: 0, kind: 'texture' },
+              { binding: 1, kind: 'sampler' }
+            ]
+          })
+
+          const displayVertices = gpu.buffer({
+            data: new Float32Array([
+              -1, -1, 0, 0,
+               3, -1, 2, 0,
+              -1,  3, 0, 2
+            ]),
+            usage: ['vertex']
+          })
+          const displayBindGroup = gpu.bindGroup(displayPipeline, [
+            { binding: 0, resource: resolved },
+            { binding: 1, resource: sampler }
+          ])
+
+          let started = false
+          gpu.frame(({ time }) => {
+            for (let i = 0; i < uniforms.length; ++i) {
+              const color = colors[i]
+              uniforms[i].write(
+                new Float32Array([
+                  time * 0.4 + i * 0.55,
+                  0.25 + i * 0.16,
+                  0,
+                  0,
+                  color[0],
+                  color[1],
+                  color[2],
+                  color[3]
+                ])
+              )
+            }
+
+            gpu.render(
+              {
+                color: msaa,
+                resolve: resolved,
+                depth,
+                clearColor: [0.015, 0.02, 0.035, 1],
+                clearDepth: 1
+              },
+              (pass) => {
+                for (let i = 0; i < bindGroups.length; ++i) {
+                  pass.draw({
+                    pipeline: scenePipeline,
+                    bindGroup: bindGroups[i],
+                    vertexBuffers: [vertices],
+                    indexBuffer: {
+                      buffer: indices,
+                      format: 'uint16'
+                    },
+                    count: 3
+                  })
+                }
+              }
+            )
+
+            gpu.render(
+              { clearColor: [0, 0, 0, 1] },
+              (pass) => {
+                pass.draw({
+                  pipeline: displayPipeline,
+                  bindGroup: displayBindGroup,
+                  vertexBuffers: [displayVertices],
+                  count: 3
+                })
+              }
+            )
+
+            if (!started) {
+              started = true
+              window.markExampleReady()
+            }
+          })
+        } catch (error) {
+          window.showExampleError(error)
+        }
+      })()
+    </script>
+  </body>
+</html>

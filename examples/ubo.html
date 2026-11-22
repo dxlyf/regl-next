@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>regl-next: Uniform Block (UBO)</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="example">
+    <div class="hud">
+      <h1>Uniform Block（Phase 2 结构化值）</h1>
+      <p>
+        <code>uniformBlocks</code> 直接接收结构化对象，regl 按 std140 反射布局
+        自动打包；<code>transform</code> 和 <code>tint</code> 通过
+        <code>regl.prop</code> 每帧更新。
+      </p>
+    </div>
+
+    <script src="../dist/regl-next.iife.js"></script>
+    <script src="ui.js"></script>
+    <script src="math.js"></script>
+    <script>
+      try {
+        const regl = createREGL({
+          container: document.body,
+          version: 2
+        })
+
+        const draw = regl({
+          vert: `#version 300 es
+            layout(std140) uniform Camera {
+              mat4 transform;
+              vec4 tint;
+            };
+            in vec2 position;
+            out vec4 vColor;
+            void main () {
+              gl_Position = transform * vec4(position, 0.0, 1.0);
+              vColor = tint;
+            }
+          `,
+          frag: `#version 300 es
+            precision highp float;
+            layout(std140) uniform Camera {
+              mat4 transform;
+              vec4 tint;
+            };
+            in vec4 vColor;
+            out vec4 fragColor;
+            void main () { fragColor = vColor; }
+          `,
+          attributes: {
+            position: [[-0.8, -0.8], [0.8, -0.8], [0, 0.8]]
+          },
+          uniformBlocks: {
+            Camera: {
+              transform: regl.prop('transform'),
+              tint: regl.prop('tint')
+            }
+          },
+          count: 3,
+          depth: { enable: false }
+        })
+
+        const transform = new Float32Array(16)
+        const rotation = new Float32Array(16)
+        const scale = new Float32Array(16)
+        const tint = new Float32Array(4)
+
+        regl.frame(({ time }) => {
+          regl.clear({ color: [0.03, 0.04, 0.06, 1] })
+          M4.rotationY(rotation, time * 0.9)
+          M4.scaling(scale, 0.55 + 0.08 * Math.sin(time * 2.0), 0.7, 1)
+          M4.multiply(transform, rotation, scale)
+          tint[0] = 0.4 + 0.6 * Math.abs(Math.sin(time * 0.8))
+          tint[1] = 0.4 + 0.6 * Math.abs(Math.sin(time * 0.8 + 2.0))
+          tint[2] = 0.5 + 0.5 * Math.abs(Math.sin(time * 0.8 + 4.0))
+          tint[3] = 1
+          draw({ transform, tint })
+          window.markExampleReady()
+        })
+      } catch (error) {
+        window.showExampleError(error)
+      }
+    </script>
+  </body>
+</html>
