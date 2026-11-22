@@ -1,6 +1,9 @@
 {
   "name": "@dxyl/regl-next",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "regl-next：用 TypeScript 重写的函数式 WebGL 框架，同时支持 WebGL1 / WebGL2，并提供 WebGPU-first PoC",
   "type": "module",
   "sideEffects": false,
