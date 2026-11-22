@@ -1,6 +1,9 @@
-﻿/**
- * WebGPU-first 鍏ュ彛銆? *
- * 瀵瑰鍙毚闇?createWEBGPU锛堜互鍙婂吋瀹瑰埆鍚?createGPU锛夈€? * 鍏蜂綋璧勬簮銆乸ipeline銆乺ender pass銆乺eadback 瀹炵幇鍒嗗埆浣嶄簬鍚岀洰褰曟ā鍧椾腑銆? */
+/**
+ * WebGPU-first 入口。
+ *
+ * 对外只暴露 createWEBGPU（以及兼容别名 createGPU）。
+ * 具体资源、pipeline、render pass、readback 实现分别位于同目录模块中。
+ */
 
 export { createWEBGPU, createGPU } from './context'
 export type * from './types'

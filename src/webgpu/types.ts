@@ -1,10 +1,14 @@
 /// <reference types="@webgpu/types" />
 
 /**
- * WebGPU-first PoC 鐨勫叕鍏辩被鍨嬨€? *
- * 杩欎笉鏄?regl WebGL API 鐨?1:1 鍏煎灞傦紝鑰屾槸涓€涓洿璐磋繎 WebGPU
- * 鏄惧紡绠＄嚎妯″瀷鐨勮交閲忓皝瑁咃細
- * - 璧勬簮鍒涘缓淇濇寔鍚屾锛? * - 鍥炶閫氳繃 `readTexture` 寮傛瀹屾垚锛? * - pipeline / bind group / render pass 閮芥槸鏄惧紡瀵硅薄銆? */
+ * WebGPU-first PoC 的公共类型。
+ *
+ * 这不是 regl WebGL API 的 1:1 兼容层，而是一个更贴近 WebGPU
+ * 显式管线模型的轻量封装：
+ * - 资源创建保持同步；
+ * - 回读通过 `readTexture` 异步完成；
+ * - pipeline / bind group / render pass 都是显式对象。
+ */
 
 export type GPUBufferUsageName =
   | 'vertex'
@@ -18,7 +22,7 @@ export type GPUBufferUsageName =
   | 'map-read'
 
 export interface GPUBufferOptions {
-  /** 鍒濆鏁版嵁锛沶umber 琛ㄧず鍙垎閰嶅瓧鑺傛暟銆?*/
+  /** 初始数据；number 表示只分配字节数。 */
   data?: ArrayBufferView | ArrayBuffer | number
   size?: number
   usage?: GPUBufferUsageName[] | GPUBufferUsageFlags
@@ -114,10 +118,10 @@ export type GPUVertexFormatName = GPUVertexFormat
 export interface GPUVertexAttributeSpec {
   name?: string
   format: GPUVertexFormat
-  /** 鎵€灞?vertex buffer slot锛岄粯璁?0銆?*/
+  /** 所属 vertex buffer slot，默认 0。 */
   buffer?: number
   offset?: number
-  /** 璇?vertex buffer 鐨?stride锛涘悓涓€ buffer 鍙渶鍦ㄤ换鎰忎竴涓?attribute 涓婃寚瀹氥€?*/
+  /** 该 vertex buffer 的 stride；同一个 buffer 只需在任意一个 attribute 上指定。 */
   stride?: number
   shaderLocation?: number
   stepMode?: GPUVertexStepMode
@@ -167,14 +171,14 @@ export interface GPUBindGroupEntry {
 }
 
 export interface GPUPipelineOptions {
-  /** WGSL 婧愮爜锛寁ertex/fragment 鍦ㄥ悓涓€涓?module 涓€?*/
+  /** WGSL 源码；vertex/fragment 在同一个 module 中。 */
   code: string
   vertexEntry?: string
   fragmentEntry?: string
   bindings?: GPUBindingSpec[]
   attributes?: GPUVertexAttributeSpec[]
   targets?: GPUColorTargetState[]
-  /** 鏈寚瀹?targets 鏃朵娇鐢ㄧ殑棰滆壊鏍煎紡銆?*/
+  /** 未指定 targets 时使用的颜色格式。 */
   format?: GPUTextureFormat
   depth?: GPUDepthStencilState | false
   primitive?: GPUPrimitiveState
@@ -248,7 +252,7 @@ export interface GPUPass {
 export type GPUClearColor = GPUColor | [number, number, number, number]
 
 export interface GPURenderOptions {
-  /** 鐪佺暐鏃舵覆鏌撳埌 canvas current texture銆?*/
+  /** 省略时渲染到 canvas current texture。 */
   color?: GPUTextureResource | GPUTextureView | Array<GPUTextureResource | GPUTextureView>
   clearColor?: GPUClearColor | false
   /** MSAA 解析目标，数量必须与 color 一致。 */
@@ -318,7 +322,7 @@ export interface GPUContextOptions {
 }
 
 export interface WEBGPUOptions extends GPUContextOptions {
-  /** 鑷姩鍒涘缓 canvas 骞舵寕杞藉埌瀹瑰櫒銆?*/
+  /** 自动创建 canvas 并挂载到容器。 */
   container?: HTMLElement | string
   width?: number
   height?: number

@@ -1,4 +1,4 @@
-/** WebGPU buffer 璧勬簮銆?*/
+/** WebGPU buffer 资源。 */
 
 import { check } from '../util/check'
 import type {

@@ -1,4 +1,4 @@
-/** WebGPU pipeline 涓?bind group銆?*/
+/** WebGPU pipeline 与 bind group。 */
 
 import { check } from '../util/check'
 import type {

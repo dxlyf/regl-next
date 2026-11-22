@@ -1,8 +1,16 @@
 ﻿/**
- * 缂佹ê鍩楅崨鎴掓姢缂傛牞鐦ч崳銊ょ瑢閹笛嗩攽閸?閳ユ柡鈧?閺佺繝閲滄惔鎾舵畱閺嶇绺鹃妴? *
- * 鐠佹崘顓搁惄顔界垼閿? * 1. 娣囨繃瀵?regl 閻ㄥ嫯鐨熼悽銊╊棑閺嶇》绱癭regl({...})` 鏉╂柨娲栨稉鈧稉顏呮＆閸欘垰缍嬮崙鑺ユ殶鐠嬪啰鏁ら妴浣稿嫉閼虫垝缍旀稉? *    scope / batch 娴ｈ法鏁ら惃鍕嚒娴犮們鈧? * 2. 閺€鎯х磾閺冄呭閻?`new Function` 娴狅絿鐖滈悽鐔稿灇閿涘本鏁兼稉鎭掆偓宀勵暕缂傛牞鐦уЧ鍌氣偓鐓庢珤 + 閺勬儳绱＄拋鈥冲灊閵嗗秲鈧? *    鏉╂瑦鐗遍崗鐓庮啇 CSP閵嗕礁褰茬拠缁樷偓褎娲挎總濮愨偓浣风瘍閺囨潙顔愰弰鎾村⒖鐏?WebGL2閵? * 3. 閸忔娊鏁悜顓＄熅瀵板嫸绱欓悩鑸碘偓浣碘偓渚€銆婇悙鐟扮潣閹佲偓涔絥iform 娑撳﹣绱堕敍澶婃晼闁插繐浠涢崚浼存祩閸掑棝鍘ら妴浣稿讲缂傛挸鐡ㄩ妴? *
- * 閸涙垝鎶ら惃鍕瑏缁夊秵澧界悰灞灸佸蹇ョ窗
- * - draw閿涙矮绱堕崗?props 鐎电钖勯敍灞惧⒔鐞涘奔绔村▎锛勭帛閸掕绱? * - batch閿涙矮绱堕崗銉︽殶缂佸嫭鍨ㄩ弫鏉跨摟閿涘本瀵?props 閹靛綊鍣虹紒妯哄煑閿? * - scope閿涙矮绱堕崗銉ユ礀鐠嬪喛绱濋幎濠佺瑐娑撳鏋?閻樿埖鈧?uniform/attribute 缁涘顔曠純顔昏礋閵嗗奔缍旈悽銊ョ厵閵嗗稄绱? *   閸︺劌娲栫拫鍐ㄥ敶闁劍澧界悰宀€娈戠€涙劕鎳℃禒銈勭窗缂佈勫鏉╂瑤绨虹拋鍓х枂閵? */
+ * 绘制命令编译器与执行器。
+ *
+ * 设计目标：
+ * 1. 保持 regl 的调用风格：`regl({...})` 返回既可调用、又可作为 scope / batch 使用的命令。
+ * 2. 放弃 `new Function` 代码生成，改为「编译求值器 + 显式绘制计划」，兼顾 CSP、可读性和 WebGL2 扩展性。
+ * 3. 关键路径（状态解析、属性绑定、uniform 上传）尽量做到零分配、可缓存。
+ *
+ * 命令的三种执行模式：
+ * - draw：传入 props，执行一次绘制；
+ * - batch：传入数组或数字，按 props 批量绘制；
+ * - scope：传入回调，把当前状态、uniform / attribute 设置给子命令。
+ */
 
 import {
   DEV,
@@ -103,7 +111,7 @@ export interface CommandRuntime {
   readonly framebuffers: FramebufferStore
   readonly vaos: VertexArrayStore
   readonly scope: ScopeState
-  /** 濮ｅ繐鎶氭稉濠佺瑓閺傚洤顕挒鈽呯礄閺冨爼妫块妴浣筋潒閸欙絽鏄傜€靛摜鐡戦敍澶堚偓?*/
+  /** 每帧上下文（时间、视口尺寸、像素比等）。 */
   readonly context: Record<string, unknown>
   readonly profile: boolean
   readonly timer: TimerLike | null
@@ -120,14 +128,14 @@ export interface CommandRuntime {
     maxTextureUnits: number
   }
   contextLost: boolean
-  /** 瑜版挸澧?batch id閿涙硜egl.batch 閸愬懏澧嶉張澶婂З閹礁褰夐柌蹇撳彙娴滎偁鈧?*/
+  /** 当前 batch id；regl.batch 内的命令共享同一个 batchId。 */
   batchId: number
   currentFramebuffer: FramebufferInternal | null
   ensureUsable(): void
   bindFramebuffer(fb: FramebufferInternal | null): void
 }
 
-  /** scope 閸涙垝鎶ら崗鍙橀煩閻ㄥ嫮濮搁幀浣碘偓?*/
+  /** scope 命令共享的状态。 */
   export class ScopeState {
   attributes = new Map<string, AttributeRecord>()
   uniforms = new Map<string, unknown>()
@@ -176,12 +184,12 @@ interface ScopeSnapshot {
   framebuffer: FramebufferInternal | null | undefined
 }
 
-/** 缂傛牞鐦ч崥搴ｆ畱閸涙垝鎶ょ拋鈥冲灊閵?*/
+/** 编译后的命令计划。 */
 export interface CommandPlan {
   commandName: string
-  /** 闂堟瑦鈧胶濮搁幀浣糕偓纭风礄閸欘垶鈧鎻╅柅鐔荤熅瀵板嫸绱氶妴?*/
+  /** 静态状态（不依赖 props 的快速路径）。 */
   state: Map<StateName, CompiledValue>
-  /** 閸斻劍鈧胶娈戝畵灞筋殰閻樿埖鈧礁顕挒鈽呯礉娓氬顩?blend: regl.prop('blend')閵?*/
+  /** 动态嵌套状态，例如 blend: regl.prop('blend')。 */
   nestedState: { prefix: string; value: CompiledValue }[]
   framebuffer?: CompiledValue
   hasFramebuffer: boolean
@@ -199,7 +207,7 @@ export interface CommandPlan {
   vao?: CompiledValue
   staticVAO: VertexArray | null
   ownedVAO: VertexArrayWrapper | null
-  /** 娴ｈ法鏁?VAO 閺冭绱漚ttributes 鐞氼偄鎷烽悾銉ｂ偓?*/
+  /** 使用 VAO 时，attributes 走 VAO 绑定。 */
   useVAO: boolean
 
   vert?: CompiledValue
@@ -211,21 +219,21 @@ export interface CommandPlan {
   context: Map<string, CompiledValue>
   profile?: CompiledValue
 
-  /** 闂堟瑦鈧胶绱拠鎴炴閻╁瓨甯村妤€鍩岄惃?program閵?*/
+  /** 静态 shader 对应的 program。 */
   programPlan: ProgramPlan | null
-  /** 閸斻劍鈧?shader 閺冨墎娈?per-program 鐠佲€冲灊缂傛挸鐡ㄩ妴?*/
+  /** 动态 shader 时按 program 缓存计划。 */
   programPlans: Map<number, ProgramPlan>
-  /** 閸涙垝鎶ら懛顏勭箒閸掓稑缂撻獮鎯扮鐠愶綁鏀㈠В浣烘畱 buffer閵?*/
+  /** 命令创建并负责销毁的 buffer。 */
   ownedBuffers: Buffer[]
-  /** 閺勬儳绱?attribute location 缂佹垵鐣鹃妴?*/
+  /** 显式 attribute location 绑定。 */
   attribLocations: [number, string][] | null
 }
 
 interface CompiledAttribute {
   value: CompiledValue
-  /** 闂堟瑦鈧浇袙閺嬫劕銈介惃鍕唶瑜版洏鈧?*/
+  /** 静态解析好的 attribute 记录。 */
   record?: AttributeRecord
-  /** 闂堟瑦鈧礁鍞撮懕鏃€鏆熼幑顔碱嚠鎼存梻娈?buffer閵?*/
+  /** 静态 attribute 对应的 buffer。 */
   ownedBuffer?: Buffer
 }
 
@@ -234,14 +242,14 @@ interface ProgramPlan {
   attributes: AttributePlan[]
   uniforms: UniformPlan[]
   blocks: UniformBlockPlan[]
-  /** 閺嬪嫬缂撻弮鍓佹畱閸欏秴鐨犻悧鍫熸拱閿涙硜estore 閸氬孩宓佸銈呭煕閺?location閵?*/
+  /** 构建时的反射版本；restore 后据此刷新 location。 */
   version: number
 }
 
 interface UniformBlockPlan {
   info: ProgramInfo['uniformBlocks'][number]
   value: CompiledValue | null
-  /** Phase 2閿涙氨绮ㄩ弸鍕閸婅壈鍤滈崝銊﹀ⅵ閸栧懍濞囬悽銊ф畱閸愬懘鍎?UBO閵?*/
+  /** Phase 2：结构化值自动打包使用的内部 UBO。 */
   owned?: OwnedUniformBlock
 }
 
@@ -258,7 +266,7 @@ interface AttributePlan {
   name: string
   location: number
   typeSize: number
-  /** 閺勵垰鎯佺€电懓绨?shader 娑擃厾娈戦弫瀛樻殶 attribute閿涘潟vec/uvec/int/uint閿涘鈧?*/
+  /** 是否使用整数 attribute（ivec / uvec / int / uint）。 */
   integer: boolean
   value: CompiledValue | null
 }
@@ -268,19 +276,19 @@ interface UniformPlan {
   location: WebGLUniformLocation
   type: number
   value: CompiledValue | null
-  /** 閺佹壆绮?uniform 閻ㄥ嫬鐔€閸氬稄绱濇笟瀣洤 u[2] -> u閵?*/
+  /** 数组 uniform 的基名，例如 u[2] -> u。 */
   arrayBase?: string
   arrayIndex?: number
 }
 
-/** 閻劍鍩涢崣顖濐潌閻ㄥ嫬鎳℃禒銈呭毐閺佽埇鈧?*/
+/** 编译后的命令函数。 */
 export interface REGLCommand {
   (props?: Record<string, unknown>): void
   (count: number, body: CommandBody): void
   (props: Record<string, unknown>[], body: CommandBody): void
   (body: CommandBody): void
   stats: CommandStats
-  /** 閸欐牕绶?program 娑擃厽鐓囨稉?uniform block 閻ㄥ嫬鍙曞鈧敮鍐ㄧ湰閿涘牓娼ら幀?shader 缂傛牞鐦ч崥搴″祮閸欘垳鏁ら敍澶堚偓?*/
+  /** 获取 program 中 uniform block 的公共布局；静态 shader 编译后即可用。 */
   uniformBlockLayout(blockName: string): UniformBlockLayout | null
   destroy(): void
 }
@@ -292,7 +300,8 @@ export type CommandBody = (
 ) => void
 
 // ---------------------------------------------------------------------------
-// 闁銆嶉幍浣搁挬閸?// ---------------------------------------------------------------------------
+// 选项扁平化
+// ---------------------------------------------------------------------------
 const NESTED_KEYS = [
   'blend',
   'depth',
@@ -322,10 +331,10 @@ const OPTION_KEYS = new Set([
 ])
 
 /**
- * 閹跺﹦鏁ら幋鐑解偓澶愩€嶉崢瀣挬閿? *   blend: { enable: true, func: {...} } -> 'blend.enable', 'blend.func'
+ * 把用户传入的嵌套选项展开为扁平 key。
  *   stencil: { op: {...} }              -> 'stencil.opFront', 'stencil.opBack'
  *
- * 婵″倹鐏夊畵灞筋殰鐎电钖勯弫缈犵秼閺勵垰濮╅幀浣糕偓纭风礄婵?blend: regl.prop('blend')閿涘绱濋崚娆庣箽閻ｆ瑤璐? * dynamicNested閿涘苯婀紒妯哄煑閺冭泛鍟€鐏炴洖绱戦妴? */
+ * 如果嵌套值整体是动态变量（例如 blend: regl.prop('blend')），则保留为 dynamicNested，在绘制时再展开。 */
 function flattenOptions(options: Record<string, unknown>): {
   flat: Map<string, unknown>
   nested: { prefix: string; value: unknown }[]
@@ -335,7 +344,7 @@ function flattenOptions(options: Record<string, unknown>): {
 
   for (const key of Object.keys(options)) {
     const value = options[key]
-    // 閸忎浇顔忛弰鎯х础閸?undefined 鐞涖劎銇氶妴灞肩瑝鐠佸墽鐤嗙拠銉┾偓澶愩€嶉妴宥忕礉閺傞€涚┒閺夆€叉瀵繘鍘ょ純?
+    // 允许显式传 undefined 表示「不设置这个状态」，继续处理下一个。
 if (value === undefined) continue
     if (NESTED_KEYS.indexOf(key) >= 0) {
       if (isDynamicLike(value)) {
@@ -363,12 +372,12 @@ if (value === undefined) continue
         }
         continue
       }
-      // 閸忎浇顔?blend: true 娑斿琚惃鍕暆閸愭瑱绱祌egl 娑撳秵鏁幐渚婄礉閻╁瓨甯撮幎銉╂晩
+      // 布尔简写只用于 enable，其他写法直接报错。
       commandRaise(`invalid ${key} option`)
     }
 
     if (key === 'stencil' || key === 'attributes' || key === 'uniforms' || key === 'context') {
-      // 閻㈠崬鎮囬懛顏勫瀻閺€顖氼槱閻?
+      // 由各命令自行处理。
 }
 
     flat.set(key, value)
@@ -382,7 +391,8 @@ function isDynamicLike(value: unknown): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// 缂傛牞鐦?// ---------------------------------------------------------------------------
+// 编译
+// ---------------------------------------------------------------------------
 let COMMAND_COUNTER = 0
 
 export function compileCommand(
@@ -396,7 +406,8 @@ export function compileCommand(
   const { flat, nested } = flattenOptions(options)
 
   // -------------------------------------------------------------------------
-  // 閺嶏繝鐛欓張顏嗙叀閸欏倹鏆?  // -------------------------------------------------------------------------
+  // 校验输入参数
+  // -------------------------------------------------------------------------
 if (DEV) {
     for (const key of flat.keys()) {
       if (!OPTION_KEYS.has(key)) {
@@ -406,7 +417,8 @@ if (DEV) {
   }
 
   // -------------------------------------------------------------------------
-  // 閻樿埖鈧?  // -------------------------------------------------------------------------
+  // 状态
+  // -------------------------------------------------------------------------
 const state = new Map<StateName, CompiledValue>()
   for (const key of STATE_NAMES) {
     if (!flat.has(key)) continue
@@ -440,7 +452,7 @@ const hasFramebuffer = flat.has('framebuffer')
   }
 
   // -------------------------------------------------------------------------
-  // 缂佹ê鍩楅崣鍌涙殶
+  // 绘制参数
   // -------------------------------------------------------------------------
 const elementsValue = flat.get('elements')
   let elements: CompiledValue | undefined
@@ -564,7 +576,7 @@ const attributeOption = (flat.get('attributes') || {}) as Record<string, unknown
 
   const attributeKeys = Object.keys(attributeOption)
   if (attributeKeys.length > 0) {
-    // 婵″倹鐏夐幍鈧張澶娾偓濂稿厴閺勵垱鏆熺€涙绱濋崚娆掝潒娑撶儤妯夊?attribute location閿涘牓鍘ら崥?VAO 娴ｈ法鏁ら敍?
+    // 如果所有 attribute 都是数字，则视为显式 attribute location（配合 VAO 使用）。
 let allNumbers = true
     for (const name of attributeKeys) {
       if (typeof attributeOption[name] !== 'number') {
@@ -573,7 +585,7 @@ let allNumbers = true
       }
     }
     if (allNumbers) {
-      // 閺勬儳绱?attribute location 閻劋绨柊宥呮値 VAO閿涘牆鎳℃禒銈堝殰闊偅鍨?scope 娑擃厽褰佹笟娑崇礆
+      // 显式 attribute location 时使用 VAO（命令自己或 scope 提供）。
       useVAO = true
       attribLocations = attributeKeys.map((name) => [
         attributeOption[name] as number,
@@ -643,7 +655,7 @@ const uniformOption = (flat.get('uniforms') || {}) as Record<string, unknown>
     : undefined
 
   // -------------------------------------------------------------------------
-  // 缂佸嫯顥婄拋鈥冲灊
+  // 组装计划
   // -------------------------------------------------------------------------
 const plan: CommandPlan = {
     commandName,
@@ -676,7 +688,7 @@ const plan: CommandPlan = {
     attribLocations
   }
 
-  // 闂堟瑦鈧?shader 缁斿宓嗙紓鏍槯閿涘苯鏁栭弮鈺傛瘹闂囨煡鏁婄拠?
+  // 静态 shader 立即编译，尽早暴露错误。
 if (vert && frag && !vert.dynamic && !frag.dynamic) {
     const program = runtime.shaders.program(
       vert.staticValue as string,
@@ -697,7 +709,7 @@ function isVAOValue(value: unknown): boolean {
   )
 }
 
-/** elements 閻ㄥ嫰鍘ょ純顔碱嚠鐠炩槄绱欐稉宥嗘Ц閺佺増宓侀妴浣风瘍娑撳秵妲哥挧鍕爱閿涘鈧?*/
+  /** elements 的配置对象（不是数据，也不是 Elements 资源）。 */
 function isElementsConfig(value: unknown): boolean {
   return (
     !!value &&
@@ -732,7 +744,7 @@ function validateBox(value: unknown, name: string, command: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Program 鐠佲€冲灊
+// Program 缓存
 // ---------------------------------------------------------------------------
 
 function buildProgramPlan(
@@ -742,7 +754,7 @@ function buildProgramPlan(
   const attributes: AttributePlan[] = []
   for (const info of program.attributes) {
     let value = plan.attributes.get(info.name)?.value || null
-    // 閸忕厧顔?webgl2 缂佹挻鐎担鎾存殶缂佸嫸绱癮ttribute 閸氬秶袨娑撯偓閼割兛绗夌敮锔芥殶缂佸嫪绗呴弽鍥风礉閺冪娀娓舵径鍕倞
+    // 兼容 WebGL2 结构体数组：attribute 名称可能带数组下标，无需额外处理。
     attributes.push({
       name: info.name,
       location: info.location as number,
@@ -799,7 +811,9 @@ function attachStaticUniformBlock(value: unknown, info: ProgramInfo['uniformBloc
 }
 
 /**
- * 娑撳﹣绗呴弬鍥ㄤ划婢跺秴鎮?program 閻?uniform/attribute location 娴兼艾褰夐崠鏍モ偓? * 鏉╂瑩鍣烽幐澶婃倳缁変即鍣搁弬鏉挎倱濮濄儰绔村▎鈽呯幢濮濓絽鐖堕幆鍛枌娑?version 閻╃鎮撻敍宀€娲块幒銉ㄧ箲閸ョ偑鈧? */
+ * 上下文恢复后 program 的 uniform / attribute location 会变化。
+ * 这里按名称重新同步一次；版本一致时直接返回。
+ */
 function refreshProgramPlan(plan: ProgramPlan): ProgramPlan {
   if (plan.version === plan.program.version) return plan
   for (const attribute of plan.attributes) {
@@ -810,7 +824,7 @@ function refreshProgramPlan(plan: ProgramPlan): ProgramPlan {
     const info = plan.program.uniforms.find((u) => u.name === uniform.name)
     if (info) uniform.location = info.location as WebGLUniformLocation
   }
-  // block 娣団剝浼呴崷?restore 閸氬孩妲搁弬鎵畱鐎电钖勯敍灞惧瘻閸氬秶袨閸氬本顒?
+  // block 信息在 restore 后可能变化，按名称同步。
 for (const block of plan.blocks) {
     const info = plan.program.uniformBlocks.find(
       (b) => b.name === block.info.name
@@ -821,7 +835,7 @@ for (const block of plan.blocks) {
   return plan
 }
 
-/** shader 娑?attribute 缁鐎烽惃鍕瀻闁插繑鏆熼妴?*/
+  /** shader 中 attribute 类型占用的分量数。 */
 function attributeTypeSize(type: number): number {
   switch (type) {
     case GL.FLOAT_VEC2:
@@ -844,7 +858,7 @@ function attributeTypeSize(type: number): number {
   }
 }
 
-/** WebGL2 娑擃參娓剁憰?vertexAttribIPointer 閻?attribute 缁鐎烽妴?*/
+  /** WebGL2 中使用 vertexAttribIPointer 的整数 attribute 类型。 */
 function isIntegerAttributeType(type: number): boolean {
   switch (type) {
     case GL.INT:
@@ -862,7 +876,7 @@ function isIntegerAttributeType(type: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// 閸涙垝鎶ら崙鑺ユ殶
+// 执行命令
 // ---------------------------------------------------------------------------
 const EMPTY_PROPS: Record<string, unknown>[] = []
 
@@ -981,7 +995,7 @@ function destroyPlan(runtime: CommandRuntime, plan: CommandPlan): void {
 }
 
 // ---------------------------------------------------------------------------
-// 缂佹ê鍩楁稉濠佺瑓閺?// ---------------------------------------------------------------------------
+// 绘制上下文
 
 interface DrawFrame {
   thisArg: unknown
@@ -990,7 +1004,7 @@ interface DrawFrame {
   batchId: number
 }
 
-/** 鎼存梻鏁?context 鐟曞棛娲婇敍宀冪箲閸ョ偞浠径宥呭毐閺佽埇鈧?*/
+/** 应用 context 覆盖，返回恢复函数。 */
 function applyContext(
   runtime: CommandRuntime,
   plan: CommandPlan,
@@ -1009,7 +1023,7 @@ function applyContext(
   }
 }
 
-/** 鐠侊紕鐣?framebuffer 鐏忓搫顕€电懓绨查惃鍕帛鐠?viewport閵?*/
+/** 计算当前 framebuffer 的宽高。 */
 function framebufferSize(
   runtime: CommandRuntime,
   fb: FramebufferInternal | null
@@ -1045,7 +1059,7 @@ function normalizeBox(
 }
 
 /**
- * 缂佹垵鐣?framebuffer 楠炶埖娲块弬棰佺瑐娑撳鏋冮柌宀€娈?framebuffer 鐏忓搫顕妴? */
+ * 绑定 framebuffer 并更新上层记录的 framebuffer 尺寸。 */
 function setFramebuffer(
   runtime: CommandRuntime,
   fb: FramebufferInternal | null
@@ -1057,7 +1071,7 @@ function setFramebuffer(
 }
 
 /**
- * 鐟欙絾鐎?command 閻?framebuffer 闁銆嶉敍娉唍defined 鐞涖劎銇氶妴灞肩瑝娣囶喗鏁奸妴宥冣偓? */
+ * 解析 command 的 framebuffer；undefined 表示「不改变」。 */
 function resolveFramebuffer(
   runtime: CommandRuntime,
   plan: CommandPlan,
@@ -1077,7 +1091,7 @@ function resolveFramebuffer(
 }
 
 // ---------------------------------------------------------------------------
-// 閸楁洘顐肩紒妯哄煑
+// 单帧绘制
 // ---------------------------------------------------------------------------
 
 function executeDraw(
@@ -1129,7 +1143,7 @@ const [fbWidth, fbHeight] = framebufferSize(runtime, runtime.currentFramebuffer)
       runtime.context.viewportHeight = fbHeight
     }
 
-    // 閻樿埖鈧?
+    // 状态
 applyStatePlans(runtime, plan, frame)
     const scissorPlan = plan.state.get('scissor.box')
     if (scissorPlan) {
@@ -1188,7 +1202,7 @@ if (!vao) {
       if (entry.stream) runtime.buffers.destroyStream(entry.buffer)
     }
     if (runtime.state.currentVAO) {
-      // 鐟欙絿绮?VAO閿涘矂浼╅崗宥嗚杽閺屾挸鎮楃紒顓炴嚒娴?
+      // 解绑 VAO，避免污染后续绘制。
 if (runtime.caps.hasVAO) runtime.caps.bindVertexArray(null)
       runtime.state.currentVAO = null
       runtime.state.invalidateVertexArrays()
@@ -1215,7 +1229,7 @@ function applyStatePlans(
       plan.commandName
     )
   }
-  // 閸斻劍鈧礁绁垫總妤冨Ц閹礁顕挒?
+  // 动态嵌套状态。
 for (const entry of plan.nestedState) {
     const object = entry.value.resolve(frame as EvalContext)
     if (!object || typeof object !== 'object') {
@@ -1235,7 +1249,7 @@ for (const entry of plan.nestedState) {
       applyStateValue(runtime.state, stateName as StateName, obj[key], plan.commandName)
     }
   }
-  // scissor.box 闂団偓鐟曚焦鐗撮幑顔肩秼閸?framebuffer 鐏忓搫顕悰銉ュ弿 width/height
+  // scissor.box 需要根据 framebuffer 尺寸补全 width / height。
 const scissor = plan.state.get('scissor.box')
   if (scissor) {
     const [w, h] = framebufferSize(runtime, runtime.currentFramebuffer)
@@ -1269,7 +1283,9 @@ function applyScissorPlan(
 }
 
 /**
- * 鎼存梻鏁ら崝銊︹偓浣哥サ婵傛濮搁幀渚婄礄娓氬顩?blend: regl.prop('blend')閿涘鈧? * @param propDependent true 閸欘亜绨查悽銊ょ贩鐠?props 閻ㄥ嫰銆嶉敍娌燼lse 閸欘亜绨查悽銊ょ瑝娓氭繆绂?props 閻ㄥ嫰銆嶉妴? */
+ * 应用动态嵌套状态（例如 blend: regl.prop('blend')）。
+ * @param propDependent true 表示应用依赖 props 的项；false 表示应用不依赖 props 的项。
+ */
 function applyNestedState(
   runtime: CommandRuntime,
   plan: CommandPlan,
@@ -1312,10 +1328,10 @@ function resolveVAO(
       }
       return vao
     }
-    // 閺勬儳绱?vao 鐟欙絾鐎芥稉?null 閺冭绱濋崶鐐衡偓鈧崚?scope 閻?targetVAO閿涘牅绗?regl 娑撯偓閼疯揪绱?
+    // 显式 vao 解析为 null 时，回退到 scope 的 targetVAO（和 regl 一致）。
 return plan.useVAO ? scope.vao : null
   }
-  // 闁俺绻?numeric attribute location 娴ｈ法鏁?VAO 閻ㄥ嫬鎳℃禒銈忕礉娴?scope 缂佈勫
+  // 使用 numeric attribute location 的命令，VAO 从 scope 继承。
 if (plan.useVAO) {
     return scope.vao
   }
@@ -1437,7 +1453,8 @@ function applyAttribute(
 }
 
 // ---------------------------------------------------------------------------
-// uniform block 缂佹垵鐣?// ---------------------------------------------------------------------------
+// uniform block 绑定
+// ---------------------------------------------------------------------------
 
 function ensureOwnedUniformBlock(
   runtime: CommandRuntime,
@@ -1461,7 +1478,8 @@ function ensureOwnedUniformBlock(
       owned.buffer.byteLength >= info.dataSize &&
       owned.signature === signature
     ) {
-      // restore / 闁插秵鏌婇柧鐐复閸氬簼淇婇幁顖氼嚠鐠炩€冲綁娴滃棴绱濇担鍡楃鐏炩偓閻╃鎮?      owned.blockInfo = info
+      // restore 后 block 信息可能变化，按名称重新同步。
+      owned.blockInfo = info
       owned.layout = makeUniformBlockLayout(info)
       return owned
     }
@@ -1557,7 +1575,7 @@ function bindUniformBlocks(
     }
 
     if (values) {
-      // Phase 2閿涙氨绮ㄩ弸鍕閸婅偐鏁遍崨鎴掓姢閹镐焦婀侀崘鍛村劥 UBO
+      // Phase 2：结构化值由命令持有内部 UBO。
 const owned = ensureOwnedUniformBlock(runtime, block)
       const staticValue = !!block.value && !block.value.dynamic
       const handle = owned.buffer.handle
@@ -1582,7 +1600,8 @@ const owned = ensureOwnedUniformBlock(runtime, block)
       }
       buffer = owned.buffer
     } else {
-      // Phase 1閿涙俺袙閺嬫劕鑻熼弽锟犵崣 std140 layout閿涙盯顩诲▎锛勭拨鐎规碍妞傛い杞扮┒閸掑棝鍘ょ€涙ê鍋?      owner!.attachLayout(block.info)
+      // Phase 1：解析并校验 std140 layout；首次绑定时顺便分配 buffer。
+      owner!.attachLayout(block.info)
       buffer = owner!._buffer
     }
 
@@ -1645,7 +1664,8 @@ const owned = ensureOwnedUniformBlock(runtime, block)
 }
 
 // ---------------------------------------------------------------------------
-// uniform 娑撳﹣绱?// ---------------------------------------------------------------------------
+// uniform 上传
+// ---------------------------------------------------------------------------
 const matrixScratch = new Float32Array(16)
 
 function uploadUniforms(
@@ -1710,7 +1730,7 @@ function uploadUniforms(
       if (value instanceof Float32Array) {
         data = value
       } else if (ArrayBuffer.isView(value)) {
-        // Float64Array 缁涘娓剁憰渚€鈧劕鍘撶槐鐘烘祮閹诡澁绱濇稉宥堝厴閻╁瓨甯撮幐澶婄摟閼哄倿鍣哥憴锝夊櫞
+        // Float64Array 不能直接按字节重解释，需逐元素转换。
 const source = value as unknown as ArrayLike<number>
         if (DEV) {
           checkCommand(
@@ -1788,7 +1808,7 @@ const source = value as unknown as ArrayLike<number>
       continue
     }
 
-    // 閸氭垿鍣洪敍姘复閸欐鏆熺紒?/ TypedArray閿涘奔绡冮幒銉ュ綀閺嶅洭鍣洪敍鍫モ偓鈧崠鏍﹁礋闁插秴顦查敍鐕傜礆閳ユ柡鈧柧绻氶幐浣峰紬閺?
+    // 向量既接受 TypedArray，也接受标量（标量视为重复分量）。
 checkCommand(
       (Array.isArray(value) || ArrayBuffer.isView(value)) &&
         (value as ArrayLike<number>).length === info.components,
@@ -1881,7 +1901,7 @@ function resolveSamplerTexture(
     }
   }
 
-  // framebuffer -> 妫版粏澹婇梽鍕缁惧湱鎮婇敍鍧甧gl 閻ㄥ嫪绌堕崚鈺勵攽娑撶尨绱?
+  // framebuffer -> 颜色附件纹理（regl 的便利行为）。
 if (isFramebuffer(textureValue)) {
     const fb = runtime.framebuffers.get(textureValue)
     if (!fb || fb.colorAttachments.length === 0) {
@@ -1939,7 +1959,7 @@ if (isFramebuffer(textureValue)) {
       sampler
     }
   }
-  // 閸忚泛鐣犻柌鍥ㄧ壉閸ｎ煉绱?D / 2D array閿涘娈忛弮璺哄涧閹恒儱褰堢敮?_texture 閻ㄥ嫬顕挒?
+  // 其它采样类型：1D / 2D array 等只接受带 _texture 的资源。
 const texture = (textureValue as { _texture?: TextureInternal })?._texture
   if (!texture) {
     raise(`invalid texture for uniform ${uniformName}`)
@@ -1948,7 +1968,8 @@ const texture = (textureValue as { _texture?: TextureInternal })?._texture
 }
 
 // ---------------------------------------------------------------------------
-// draw 鐠嬪啰鏁?// ---------------------------------------------------------------------------
+// draw 调用
+// ---------------------------------------------------------------------------
 
 function performDraw(
   runtime: CommandRuntime,
@@ -1960,7 +1981,7 @@ function performDraw(
   const gl = runtime.gl
   const ec = frame as EvalContext
 
-  // 鐟欙絾鐎?elements
+  // 解析 elements
 let elements: ElementBuffer | null = null
   let elementsValue: unknown = undefined
   if (plan.elements) {
@@ -2051,7 +2072,7 @@ let offset: number
   if (count <= 0) return
 
   if (elements) {
-    // 娴ｈ法鏁?VAO 閺?ELEMENT_ARRAY_BUFFER 瀹歌尙绮￠崠鍛儓閸?VAO 娑?
+    // 使用 VAO 时 ELEMENT_ARRAY_BUFFER 已经绑定在 VAO 里。
 if (!vao) {
       if (!elements.buffer.handle) {
         commandRaise('element buffer has been destroyed', plan.commandName)
@@ -2086,7 +2107,7 @@ function indexByteSize(type: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// 閹靛綊鍣虹紒妯哄煑
+// 批量绘制
 // ---------------------------------------------------------------------------
 
 function executeBatch(
@@ -2132,7 +2153,7 @@ function executeBatch(
     if (fb !== undefined) setFramebuffer(runtime, fb)
   }
 
-  // 鎼存梻鏁ゆ稉宥勭贩鐠?props 閻ㄥ嫮濮搁幀?
+  // 应用不依赖 props 的状态。
 for (const [name, value] of plan.state) {
     if (name === 'scissor.box' || name === 'viewport') continue
     if (!value.propDep) {
@@ -2216,7 +2237,7 @@ const [fbWidth, fbHeight] = framebufferSize(
           }
         }
 
-        // 娓氭繆绂?props 閻ㄥ嫮濮搁幀?
+        // 应用依赖 props 的状态。
 for (const [name, value] of plan.state) {
           if (name === 'scissor.box' || name === 'viewport') continue
           if (value.propDep) {
@@ -2291,7 +2312,8 @@ function contextInvariant(plan: CommandPlan): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Scope 閸涙垝鎶?// ---------------------------------------------------------------------------
+// Scope 命令
+// ---------------------------------------------------------------------------
 
 function executeScope(
   runtime: CommandRuntime,
@@ -2344,7 +2366,7 @@ const [fbWidth, fbHeight] = framebufferSize(runtime, runtime.currentFramebuffer)
     }
     applyStatePlans(runtime, plan, frame)
 
-    // 娣囨繂鐡ㄩ崚?scope閿涘奔绶?body 閸愬懐娈戠€涙劕鎳℃禒銈囨埛閹?
+    // 保存当前 scope，让 body 内的子命令继承。
 for (const [name, value] of plan.uniforms) {
       runtime.scope.uniforms.set(name, value.resolve(frame as EvalContext))
     }
@@ -2373,7 +2395,7 @@ if (plan.vert) {
     if (plan.frag) {
       runtime.scope.shader.frag = plan.frag.resolve(frame as EvalContext) as string
     }
-    // draw 閸欏倹鏆?
+    // draw 参数
 if (plan.elements) {
       runtime.scope.draw.elements = plan.elements.resolve(frame as EvalContext) as never
     }
@@ -2391,7 +2413,7 @@ if (plan.elements) {
 const vao = resolveVAO(plan, frame, snapshot)
     if (vao) runtime.scope.vao = vao
 
-    // 鎵ц body
+    // 执行 body
 const previousBatchId = runtime.batchId
     runtime.batchId = batchId
     try {
@@ -2418,13 +2440,13 @@ const previousBatchId = runtime.batchId
 }
 
 // ---------------------------------------------------------------------------
-// 瀹搞儱鍙?// ---------------------------------------------------------------------------
+// 工具
 
 function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now()
 }
 
-/** 閺勵垰鎯佺€电懓缍嬮崜宥呮嚒娴犮倕浠涢幀褑鍏樼紒鐔活吀閵?*/
+/** 判断当前命令是否需要性能统计。 */
 function wantsProfile(
   runtime: CommandRuntime,
   plan: CommandPlan,

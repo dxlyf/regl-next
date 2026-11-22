@@ -1,4 +1,4 @@
-﻿/** WebGPU sampler 璧勬簮銆?*/
+/** WebGPU sampler 资源。 */
 
 import type {
   GPUSamplerOptions,

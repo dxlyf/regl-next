@@ -1,4 +1,4 @@
-/** WebGPU 鍚庣鍐呴儴鍏变韩鐨勫伐鍏峰嚱鏁般€?*/
+/** WebGPU 后端内部共享的工具函数。 */
 
 import { check } from '../util/check'
 import type {
